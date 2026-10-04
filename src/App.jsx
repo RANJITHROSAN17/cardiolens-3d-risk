@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import HeartScene from './HeartScene.jsx';
 
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '');
+const apiUrl = (path) => `${API_BASE_URL}${path}`;
+
 const DEMO_CASE = {
   age: 58,
   sex: 'Female',
@@ -145,7 +148,7 @@ function App() {
     setBusy(true);
     setApiError('');
     try {
-      const response = await fetch('/api/predict', {
+      const response = await fetch(apiUrl('/api/predict'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ schema_version: '0.2', features: nextFeatures }),
@@ -156,7 +159,7 @@ function App() {
       setDirty(false);
       setApiReady(true);
     } catch (error) {
-      setApiError(error.message || 'Could not connect to the local API.');
+      setApiError(error.message || 'Could not connect to the prediction API.');
       setApiReady(false);
     } finally {
       setBusy(false);
@@ -166,8 +169,8 @@ function App() {
   useEffect(() => {
     let cancelled = false;
     Promise.all([
-      fetch('/api/sample-case').then((r) => r.json()),
-      fetch('/api/model-info').then((r) => r.json()),
+      fetch(apiUrl('/api/sample-case')).then((r) => r.json()),
+      fetch(apiUrl('/api/model-info')).then((r) => r.json()),
     ]).then(([sample, info]) => {
       if (cancelled) return;
       setFeatures(sample.features);
@@ -175,7 +178,7 @@ function App() {
       setModelInfo(info);
       requestPrediction(sample.features);
     }).catch(() => {
-      if (!cancelled) setApiError('API is starting. Refresh once the local service is ready.');
+      if (!cancelled) setApiError('The prediction API is unavailable. Check that it is running, then refresh.');
     });
     return () => { cancelled = true; };
   }, []);
@@ -425,7 +428,7 @@ function App() {
           </aside>
         </div>
 
-        {apiError && <div className="toast-error" role="alert"><Icon name="info" size={17} /><span>{apiError} Make sure the local API is running.</span></div>}
+        {apiError && <div className="toast-error" role="alert"><Icon name="info" size={17} /><span>{apiError} Check the prediction API service.</span></div>}
         <footer className="app-footer"><span>CardioLens Prototype <b>·</b> build 0.2.0</span><span>For software demonstration only <b>·</b> No real patient data</span><span className="footer-links">API {apiReady ? 'online' : 'offline'} <i className={apiReady ? 'online' : ''} /></span></footer>
       </main>
     </div>
