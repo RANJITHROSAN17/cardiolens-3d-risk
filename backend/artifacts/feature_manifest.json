@@ -1,0 +1,70 @@
+{
+  "feature_columns": [
+    "age",
+    "sex",
+    "bmi",
+    "diabetes",
+    "hypertension",
+    "smoking",
+    "ex_smoker",
+    "family_history",
+    "systolic_bp",
+    "pulse_rate",
+    "typical_chest_pain",
+    "st_elevation",
+    "st_depression",
+    "t_inversion",
+    "lvh",
+    "fbs",
+    "tg",
+    "ldl",
+    "hdl",
+    "ef_tte",
+    "region_rwma",
+    "vhd"
+  ],
+  "source_to_canonical": {
+    "Age": "age",
+    "Sex": "sex",
+    "BMI": "bmi",
+    "DM": "diabetes",
+    "HTN": "hypertension",
+    "Current Smoker": "smoking",
+    "EX-Smoker": "ex_smoker",
+    "FH": "family_history",
+    "BP": "systolic_bp",
+    "PR": "pulse_rate",
+    "Typical Chest Pain": "typical_chest_pain",
+    "St Elevation": "st_elevation",
+    "St Depression": "st_depression",
+    "Tinversion": "t_inversion",
+    "LVH": "lvh",
+    "FBS": "fbs",
+    "TG": "tg",
+    "LDL": "ldl",
+    "HDL": "hdl",
+    "EF-TTE": "ef_tte",
+    "Region RWMA": "region_rwma",
+    "VHD": "vhd"
+  },
+  "target_columns": {
+    "cad_present": "Cath",
+    "lad": "LAD",
+    "lcx": "LCX",
+    "rca": "RCA"
+  },
+  "forbidden_predictors": [
+    "cad",
+    "cath",
+    "lad",
+    "lcx",
+    "rca"
+  ],
+  "dataset_sha256": "739343245c2ba578b541370217531750d8e936022f928b83e0d91756caa3ff0b",
+  "label_consistency": {
+    "rows_compared": 303,
+    "agreement_rate": 0.9966996699669967,
+    "disagreements": 1,
+    "note": "QA comparison only; source target is retained as supplied."
+  }
+}
