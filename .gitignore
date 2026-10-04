@@ -1,5 +1,6 @@
 node_modules/
 dist/
+.vscode/
 .venv/
 __pycache__/
 .pytest_cache/
@@ -7,6 +8,8 @@ __pycache__/
 .ruff_cache/
 *.py[cod]
 .env
+.env.local
+.env.*.local
 backend/data/
 *.log
 .DS_Store
