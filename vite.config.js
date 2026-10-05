@@ -1,7 +1,10 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
+const basePath = process.env.VITE_BASE_PATH || '/cardiolens-3d-risk/';
+
 export default defineConfig({
+  base: basePath,
   plugins: [react()],
   build: {
     // Three.js is a single vendor dependency; its 189 kB gzip bundle is within the demo budget.
