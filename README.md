@@ -163,6 +163,7 @@ backend/tests/                Backend smoke and validation tests
 docs/model-card.md            Model details, metrics, intended use, limitations
 docs/project-spec.md          Project specification and design documentation
 DATA_ATTRIBUTION.md           UCI source attribution and license note
+LICENSE                       MIT license for the code in this repository
 ```
 
 ## Before any clinical research or deployment
@@ -175,3 +176,10 @@ Independent validation on representative data, calibration assessment, clinicall
 - [Dataset attribution and license](DATA_ATTRIBUTION.md)
 - [Model card](docs/model-card.md)
 - [Project specification](docs/project-spec.md)
+
+## License
+
+Code in this repository is released under the [MIT License](LICENSE). The source dataset is **not**
+included and is governed by its own terms — see [`DATA_ATTRIBUTION.md`](DATA_ATTRIBUTION.md). The
+bundled model artifact and metrics are research artifacts derived from that dataset and carry the
+same research-only limitations described above.
