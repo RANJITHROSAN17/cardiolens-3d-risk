@@ -1,0 +1,59 @@
+{
+  "warning": "Exploratory same-source holdout, not clinically validated; outcome is CHD only, not heart attack or stroke composite.",
+  "dataset_sha256": "2c0e57dc0361b420becf1facec0a054af06c420eae0ae2faf0fdc8591fadb018",
+  "rows_total": 4240,
+  "excluded_prior_stroke": 25,
+  "rows_analyzed": 4215,
+  "training_rows": 3372,
+  "test_rows": 843,
+  "training_events": 506,
+  "test_events": 127,
+  "test_event_fraction": 0.1506524317912218,
+  "roc_auc": 0.7242334931597237,
+  "average_precision": 0.3221431195324026,
+  "brier_score": 0.1173027224350139,
+  "baseline_brier_score": 0.12795662837772234,
+  "calibration_bins": [
+    {
+      "n": 169,
+      "mean_prediction": 0.04245367290879386,
+      "observed_event_fraction": 0.03550295857988166
+    },
+    {
+      "n": 169,
+      "mean_prediction": 0.07693261321307059,
+      "observed_event_fraction": 0.08284023668639054
+    },
+    {
+      "n": 169,
+      "mean_prediction": 0.11789883483192269,
+      "observed_event_fraction": 0.1301775147928994
+    },
+    {
+      "n": 168,
+      "mean_prediction": 0.18388935703065754,
+      "observed_event_fraction": 0.16666666666666666
+    },
+    {
+      "n": 168,
+      "mean_prediction": 0.3480602108174421,
+      "observed_event_fraction": 0.3392857142857143
+    }
+  ],
+  "features": [
+    "male",
+    "age",
+    "currentSmoker",
+    "BPMeds",
+    "diabetes",
+    "totChol",
+    "sysBP",
+    "BMI",
+    "glucose"
+  ],
+  "split_seed": 42,
+  "python": "3.13.16",
+  "numpy": "2.3.5",
+  "pandas": "2.2.3",
+  "scikit_learn": "1.6.1"
+}

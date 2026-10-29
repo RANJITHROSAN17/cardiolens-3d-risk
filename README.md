@@ -191,3 +191,8 @@ For the selected primary-prevention direction, see [the 10-year prevention resea
 ### Prevention follow-through concept
 
 The interactive fictional worklist explores screening-to-follow-up stages without collecting patient data or computing clinical risk. See [the evidence and product proposal](docs/prevention-follow-through.md). This is a research simulation, not a clinical worklist; it does not save, schedule, message, diagnose, triage or predict.
+
+### Dataset experiment & GitHub Pages
+
+- [Exploratory dataset experiment, results and reproduction](docs/dataset-experiment.md) — 10-year CHD label, a different target from the proposed heart-attack-or-stroke composite; not clinical validation.
+- [How to use and deploy GitHub Pages](docs/github-pages.md) — the live site updates only after an eligible workflow deployment.
