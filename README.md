@@ -183,3 +183,7 @@ Code in this repository is released under the [MIT License](LICENSE). The source
 included and is governed by its own terms — see [`DATA_ATTRIBUTION.md`](DATA_ATTRIBUTION.md). The
 bundled model artifact and metrics are research artifacts derived from that dataset and carry the
 same research-only limitations described above.
+
+See [the product blueprint](docs/product-blueprint.md) for a research-to-clinical roadmap and safety gates.
+
+For the selected primary-prevention direction, see [the 10-year prevention research plan](docs/prevention-risk-plan.md).
