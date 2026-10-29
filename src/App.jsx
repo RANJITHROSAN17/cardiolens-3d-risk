@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { validateCase } from './validation.js';
 import HeartScene from './HeartScene.jsx';
 import PreventionWorkspace from './PreventionWorkspace.jsx';
+import FollowThrough from './FollowThrough.jsx';
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '');
 const apiUrl = (path) => `${API_BASE_URL}${path}`;
@@ -394,6 +395,7 @@ function App() {
         </section>
 
         <PreventionWorkspace />
+        <FollowThrough />
 
         <div className="dashboard-grid">
           <section className="panel input-panel" aria-labelledby="inputs-title">

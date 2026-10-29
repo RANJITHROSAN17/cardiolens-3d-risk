@@ -187,3 +187,7 @@ same research-only limitations described above.
 See [the product blueprint](docs/product-blueprint.md) for a research-to-clinical roadmap and safety gates.
 
 For the selected primary-prevention direction, see [the 10-year prevention research plan](docs/prevention-risk-plan.md).
+
+### Prevention follow-through concept
+
+The interactive fictional worklist explores screening-to-follow-up stages without collecting patient data or computing clinical risk. See [the evidence and product proposal](docs/prevention-follow-through.md). This is a research simulation, not a clinical worklist; it does not save, schedule, message, diagnose, triage or predict.
