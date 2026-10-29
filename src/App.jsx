@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { validateCase } from './validation.js';
 import HeartScene from './HeartScene.jsx';
+import PreventionWorkspace from './PreventionWorkspace.jsx';
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '');
 const apiUrl = (path) => `${API_BASE_URL}${path}`;
@@ -222,8 +224,13 @@ function App() {
   const [dirty, setDirty] = useState(false);
   const [apiError, setApiError] = useState('');
   const [apiReady, setApiReady] = useState(false);
+  const requestVersion = useRef(0);
+  const validationErrors = useMemo(() => validateCase(features), [features]);
 
   async function requestPrediction(nextFeatures = features) {
+    const errors = validateCase(nextFeatures);
+    if (errors.length) { setPrediction(null); setApiError(`Cannot score: ${errors.join('; ')}.`); return; }
+    const version = ++requestVersion.current;
     setBusy(true);
     setApiError('');
 
@@ -248,26 +255,24 @@ function App() {
         body: JSON.stringify({ schema_version: '0.2', features: nextFeatures }),
       });
       const data = await response.json();
+      if (version !== requestVersion.current) return;
       if (!response.ok) throw new Error(data.message || 'Prediction service returned an error.');
       setPrediction(data);
       setDirty(false);
       setApiReady(true);
     } catch (error) {
-      setApiError(error.message || 'Could not connect to the prediction API.');
+      if (version !== requestVersion.current) return;
+      setApiError(`${error.message || 'Could not connect to the prediction API.'} No result was generated.`);
       setApiReady(false);
-      setPrediction(buildSyntheticPrediction(nextFeatures));
-      setModelInfo({
-        mode: 'synthetic_demo',
-        model_id: 'synthetic-score-v0.2',
-        model_version: '0.2.0-demo',
-      });
+      setPrediction(null);
     } finally {
-      setBusy(false);
+      if (version === requestVersion.current) setBusy(false);
     }
   }
 
   useEffect(() => {
     let cancelled = false;
+    const initialVersion = requestVersion.current;
 
     if (!hasRemoteApi()) {
       const sample = DEMO_CASE;
@@ -287,21 +292,21 @@ function App() {
       fetch(apiUrl('/api/sample-case')).then((r) => r.json()),
       fetch(apiUrl('/api/model-info')).then((r) => r.json()),
     ]).then(([sample, info]) => {
-      if (cancelled) return;
+      if (cancelled || initialVersion !== requestVersion.current) return;
       setFeatures(sample.features);
       setCaseId(sample.case_id);
       setModelInfo(info);
       requestPrediction(sample.features);
     }).catch(() => {
-      if (!cancelled) {
-        setApiError('The prediction API is unavailable. Running the local demo fallback.');
-        setPrediction(buildSyntheticPrediction(DEMO_CASE));
+      if (!cancelled && initialVersion === requestVersion.current) {
+        setApiError('The prediction API is unavailable. No result was generated.');
+        setPrediction(null);
         setModelInfo({
           mode: 'synthetic_demo',
           model_id: 'synthetic-score-v0.2',
           model_version: '0.2.0-demo',
         });
-        setApiReady(true);
+        setApiReady(false);
       }
     });
     return () => { cancelled = true; };
@@ -314,6 +319,8 @@ function App() {
   const currentVessel = useMemo(() => VESSEL_META[activeVessel], [activeVessel]);
 
   function updateFeature(name, value) {
+    requestVersion.current += 1;
+    setBusy(false);
     setFeatures((previous) => {
       const next = { ...previous, [name]: value };
       if (name === 'smoking' && value === true) next.ex_smoker = false;
@@ -326,6 +333,8 @@ function App() {
   }
 
   function loadCase(name) {
+    requestVersion.current += 1;
+    setBusy(false);
     if (name === 'New manual case') {
       const nextCount = manualCounter + 1;
       setManualCounter(nextCount);
@@ -358,6 +367,7 @@ function App() {
         </div>
         <nav className="top-nav" aria-label="Primary navigation">
           <button className="nav-item active"><Icon name="activity" size={15} /> Overview</button>
+          <button className="nav-item" onClick={() => document.getElementById('prevention-roadmap')?.scrollIntoView({ behavior: 'smooth' })}><Icon name="shield" size={15} /> Prevention plan</button>
           <button className="nav-item" onClick={() => document.getElementById('model-notes')?.scrollIntoView({ behavior: 'smooth' })}><Icon name="info" size={15} /> Model notes</button>
         </nav>
         <div className="topbar-right">
@@ -383,6 +393,8 @@ function App() {
           <div className="case-chip"><span className="case-chip-icon"><Icon name="activity" size={17} /></span><span><small>ACTIVE CASE</small><strong>{caseId} <em>· {inputKind === 'manual' ? 'manual entry' : 'demo preset'}</em></strong></span></div>
         </section>
 
+        <PreventionWorkspace />
+
         <div className="dashboard-grid">
           <section className="panel input-panel" aria-labelledby="inputs-title">
             <div className="panel-heading">
@@ -405,7 +417,7 @@ function App() {
               <NumberField label="Age" name="age" value={features.age} unit="years" min="18" max="110" onChange={updateFeature} />
               <label className="select-field">
                 <span className="field-label">Sex variable{!features.sex && <em className="field-required">required</em>}</span>
-                <select value={features.sex} onChange={(e) => updateFeature('sex', e.target.value)}><option value="">Select</option><option>Female</option><option>Male</option><option value="Other">Other</option></select>
+                <select value={features.sex} onChange={(e) => updateFeature('sex', e.target.value)}><option value="">Select</option><option>Female</option><option>Male</option></select>
               </label>
             </div>
 
@@ -464,10 +476,11 @@ function App() {
               <span className="data-origin"><i /> {inputKind === 'manual' ? 'Manual demo entry · not saved' : 'Synthetic input · no identifiers'}</span>
               {dirty && <span className="unsaved-chip">Changes not scored</span>}
             </div>
-            <button className="primary-button" onClick={() => requestPrediction()} disabled={busy}>
+            <button className="primary-button" onClick={() => requestPrediction()} disabled={busy || validationErrors.length > 0}>
               {busy ? <span className="spinner" /> : <Icon name="spark" size={18} />}
               {busy ? 'Calculating estimate…' : isDemo ? 'Run demo estimate' : 'Run research estimate'}
             </button>
+            {validationErrors.length > 0 && <div className="validation-notice" role="status"><strong>Complete or correct the input before scoring</strong><ul>{validationErrors.map((error) => <li key={error}>{error}</li>)}</ul><span>These bounds check form integrity, not clinical normality.</span></div>}
             <p className="button-footnote">{isDemo ? 'Demo formula only · not a trained clinical model' : 'Research baseline only · uncalibrated'}</p>
           </section>
 

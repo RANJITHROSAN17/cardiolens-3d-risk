@@ -279,3 +279,20 @@ button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-v
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
+
+.validation-notice { margin: 12px 0; padding: 12px 14px; border: 1px solid #dbb679; border-radius: 10px; background: #fff9ed; color: #67450c; font-size: 12px; line-height: 1.5; }
+.validation-notice ul { margin: 6px 0; padding-left: 18px; }
+
+.prevention-panel { padding: 22px; margin-bottom: 18px; }
+.prevention-heading { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; }
+.prevention-heading h2 { font-size: 19px; margin: 8px 0; }
+.prevention-heading p, .prevention-grid p, .prevention-footer { color: #526377; font-size: 12px; line-height: 1.55; }
+.prevention-status { flex-shrink: 0; background: #e9f5f3; color: #12665e; border-radius: 20px; font-size: 10px; font-weight: 700; padding: 8px 10px; }
+.prevention-warning { margin: 16px 0; background: #fff7e7; color: #68490f; border: 1px solid #ead6ad; border-radius: 9px; padding: 12px; font-size: 12px; line-height: 1.5; }
+.prevention-grid { display: grid; grid-template-columns: 1fr 2fr; gap: 26px; }
+.prevention-grid h3 { font-size: 14px; margin: 0 0 8px; }.prevention-grid h3 span { color: #1a8071; font-size: 12px; }
+.prevention-checks { display: grid; gap: 8px; margin-top: 12px; }
+.prevention-checks label { display: flex; gap: 9px; align-items: flex-start; font-size: 12px; line-height: 1.4; cursor: pointer; }
+.prevention-checks input { margin: 3px 0 0; accent-color: #138374; }.prevention-checks small { display: block; color: #637487; margin-top: 2px; }
+.prevention-footer { border-top: 1px solid #e4eaf0; margin: 16px 0 0; padding-top: 12px; }
+@media (max-width: 700px) { .prevention-grid { grid-template-columns: 1fr; gap: 15px; } .prevention-heading { flex-direction: column; } }
