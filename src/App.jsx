@@ -7,7 +7,7 @@ import ResearchResults from './ResearchResults.jsx';
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '');
 const apiUrl = (path) => `${API_BASE_URL}${path}`;
-const hasRemoteApi = () => Boolean(API_BASE_URL);
+const hasRemoteApi = () => Boolean(API_BASE_URL) || import.meta.env.VITE_USE_LOCAL_API === 'true';
 
 function _sigmoid(value) {
   return 1.0 / (1.0 + Math.exp(-Math.max(-30.0, Math.min(30.0, value))));
@@ -260,6 +260,7 @@ function App() {
       if (version !== requestVersion.current) return;
       if (!response.ok) throw new Error(data.message || 'Prediction service returned an error.');
       setPrediction(data);
+      if (data.mode) setModelInfo({ mode: data.mode, model_id: data.model_id, model_version: data.model_version });
       setDirty(false);
       setApiReady(true);
     } catch (error) {
@@ -291,8 +292,8 @@ function App() {
     }
 
     Promise.all([
-      fetch(apiUrl('/api/sample-case')).then((r) => r.json()),
-      fetch(apiUrl('/api/model-info')).then((r) => r.json()),
+      fetch(apiUrl('/api/sample-case')).then((r) => { if (!r.ok) throw new Error('Sample request failed'); return r.json(); }),
+      fetch(apiUrl('/api/model-info')).then((r) => { if (!r.ok) throw new Error('Model info request failed'); return r.json(); }),
     ]).then(([sample, info]) => {
       if (cancelled || initialVersion !== requestVersion.current) return;
       setFeatures(sample.features);
@@ -303,11 +304,7 @@ function App() {
       if (!cancelled && initialVersion === requestVersion.current) {
         setApiError('The prediction API is unavailable. No result was generated.');
         setPrediction(null);
-        setModelInfo({
-          mode: 'synthetic_demo',
-          model_id: 'synthetic-score-v0.2',
-          model_version: '0.2.0-demo',
-        });
+        setModelInfo(null);
         setApiReady(false);
       }
     });
@@ -373,7 +370,7 @@ function App() {
           <button className="nav-item" onClick={() => document.getElementById('model-notes')?.scrollIntoView({ behavior: 'smooth' })}><Icon name="info" size={15} /> Model notes</button>
         </nav>
         <div className="topbar-right">
-          <span className={`api-status ${apiReady ? 'online' : ''}`}><i />{apiReady ? 'Demo ready' : 'Connecting'}</span>
+          <span className={`api-status ${apiReady ? 'online' : ''}`}><i />{apiReady ? (isDemo ? 'Demo ready' : 'Research API ready') : (apiError ? 'Unavailable' : 'Connecting')}</span>
           <span className="environment-pill"><span className="env-dot" /> SANDBOX</span>
           <div className="avatar">CL</div>
         </div>

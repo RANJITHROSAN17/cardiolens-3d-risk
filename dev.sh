@@ -5,12 +5,12 @@ cd "$ROOT"
 
 if [ ! -d node_modules ]; then
   echo "Installing web dependencies..."
-  npm install
+  npm ci
 fi
 
 if [ ! -x "$ROOT/backend/.venv/bin/python" ]; then
   echo "Creating backend virtual environment..."
-  python -m venv "$ROOT/backend/.venv"
+  python3 -m venv "$ROOT/backend/.venv"
 fi
 API_PY="$ROOT/backend/.venv/bin/python"
 if ! "$API_PY" -c 'import fastapi, uvicorn, sklearn; assert sklearn.__version__ == "1.6.1"' >/dev/null 2>&1; then
@@ -25,4 +25,4 @@ cleanup() {
   wait "$API_PID" 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM
-npm run dev -- --host 0.0.0.0
+VITE_BASE_PATH=/ VITE_USE_LOCAL_API=true npm run dev -- --host 0.0.0.0

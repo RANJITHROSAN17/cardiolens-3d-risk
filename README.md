@@ -1,198 +1,172 @@
+<div align="center">
+
 # CardioLens 3D
 
-**An interactive, research-only coronary visualization prototype for hackathon demonstration.**
+### Explore the heart. Question the model. Design better prevention.
 
-CardioLens 3D pairs a browser-based 3D coronary schematic with a fixed, locally loaded machine-learning baseline. It supports synthetic demo presets and manual entry of **one case at a time**, then displays uncalibrated scores for the source-cohort CAD label and the LAD, LCX, and RCA labels.
+An interactive **research prototype** combining a 3D coronary schematic, transparent model experiments, and a fictional prevention follow-through workflow.
 
-> **⚠️ Demo/research use only — not for patient care.** This prototype has not been independently or prospectively validated, is not calibrated, and must not be used for diagnosis, screening, triage, treatment, or clinical decisions. Its scores are **not clinical probabilities or future-event risk estimates**. The 3D model is schematic, not patient-specific; whole-vessel coloring does not identify a lesion. Never enter names, identifiers, or protected health information (PHI).
+[Explore the live demo](https://ranjithrosan17.github.io/cardiolens-3d-risk/) · [Quick start](#quick-start) · [See the evidence](#what-do-the-results-mean) · [Share feedback](#share-feedback--contribute)
 
-## At a glance
+</div>
 
-| | Current prototype |
-|---|---|
-| Workflow | Three synthetic presets or a blank manual form; one active case at a time |
-| Model | Fixed, versioned logistic-regression research baseline; no automatic learning |
-| Inputs | 22 curated fields; all required manual fields must be explicitly entered |
-| Targets | Source-cohort prevalent CAD (`Cath`) and source vessel labels (`LAD`, `LCX`, `RCA`) |
-| Data | 303-record UCI source cohort; raw dataset file is not included |
-| Validation | Internal repeated stratified cross-validation only; no external or prospective validation |
-| Anatomy | Procedural schematic; no patient imaging, lesion coordinates, or segment localization |
-| Future-event risk | Not available |
+> **Research and software demonstration only — not for patient care.** CardioLens is not validated for diagnosis, screening, triage, treatment or any clinical decision. **Never enter real patient data, names or identifiers.** The 3D heart is a generic schematic; colors do not show a real person's arteries or lesions. No 10-year cardiovascular risk calculator is available.
 
-## What it does
+---
 
-- **Interactive 3D view:** rotate and zoom the schematic; select a vessel in the scene or from the vessel cards.
-- **Single-case workflow:** use a synthetic preset or start a blank manual case. Required fields and Yes/No inputs must be entered explicitly; blanks are not silently changed to normal values. Editing inputs clears the previous result.
-- **Research-only outputs:** display model scores and the model's calibration status for CAD and the three vessel labels.
-- **Model explanation:** show local linear-model log-odds contributions. These are not SHAP values, causal explanations, or treatment guidance.
-- **Local-first demo:** React/Vite serves the interface and proxies `/api` to a local FastAPI service. There is no EHR/FHIR integration, hosted patient database, or multi-patient worklist.
+## Why CardioLens?
 
-The model bundle is fixed during normal app use. Retraining is a separate, explicit local workflow; the application does not learn automatically from entered cases.
+Cardiovascular disease can develop quietly, and detecting risk is only one part of prevention: a person also needs access to review, an appropriate plan and follow-up. CardioLens is an experiment in making these ideas easier to explore—without pretending that a prototype can replace clinicians or established care.
 
-## Safety, privacy, and scope
+Our long-term question: **Could a locally validated risk model and a thoughtfully designed follow-through workflow help a care team support cardiovascular prevention?** That question still needs clinical partners, representative longitudinal data, independent validation, usability studies and regulatory review. The current project does not answer it yet.
 
-This is a hackathon research prototype, not a validated clinical decision-support system. No medical-device regulatory determination has been completed; a disclaimer alone does not establish clinical suitability or regulatory status.
+## Try it in a few minutes
 
-- Do not use it to diagnose, screen, triage, treat, or make decisions about a person.
-- Do not enter real patient data, names, identifiers, or PHI. The prototype has no authentication, clinical data governance, or privacy/security review.
-- Scores are uncalibrated outputs for labels in one historical source cohort. They are not calibrated probabilities, risk strata, or 10-/30-year cardiovascular event estimates.
-- CAD and vessel outputs are separate model heads; they do not form a joint probability distribution.
-- The visualization colors complete schematic vessels. It does not infer a patient's anatomy, stenosis location, lesion length, or affected myocardial territory.
-- No independent external validation, prospective evaluation, clinical threshold selection, fairness analysis, or clinical-use approval has been completed.
+1. **Read the safety notice** and use fictional data only.
+2. Explore the **prevention research checklist**. It records no clinical evidence and resets on refresh.
+3. Try the **fictional follow-through worklist**: filter by stage, move example cases forward or backward, and reset. Nothing is scheduled, sent or saved.
+4. Review the **dataset experiment** and compare predicted and observed event frequencies in its held-out sample. This is a separate offline experiment—not a live risk calculator.
+5. In the **coronary explorer**, select a demo preset and run an estimate; drag to rotate the heart, zoom, and select a vessel. Editing inputs clears the old result. Try a blank manual case to see the missing-input checks—use invented values only.
 
-## Run locally
+The public site uses a **fabricated synthetic formula** unless an API was explicitly configured at build time. The live site may reflect an older deployed commit than this branch. [Pages usage guide](docs/github-pages.md).
 
-### Requirements
+## What is here—and what isn't
 
-- **Node.js:** 20.19+ or 22.12+; npm 10+.
-- **Python:** 3.12 64-bit recommended. The bundled model artifact requires the pinned scikit-learn version `1.6.1`.
-- A modern browser with WebGL enabled. A dedicated GPU is not required.
+| Area | Available now | Not available / not established |
+|---|---|---|
+| **3D explorer** | Interactive generic heart and selectable LAD, LCX and RCA | Patient-specific imaging, lesion location or stenosis measurement |
+| **Scoring** | Fabricated browser demo; optional uncalibrated CAD/vessel research model via FastAPI | Validated patient risk, clinical probability, diagnosis or triage |
+| **Prevention** | Fictional worklist and research checklist, held in memory | Patient records, scheduling, messaging, EHR/FHIR integration or 10-year risk calculator |
+| **Evidence** | Internal CAD-model cross-validation; a separate exploratory CHD holdout experiment | Independent external/prospective validation, clinical utility or regulatory authorization |
 
-### Windows PowerShell
+The fictional follow-through examples are not patients. The CAD explorer accepts one active synthetic/manual case at a time. **Do not use any output to make decisions about a person.**
 
-Open two PowerShell terminals. In both, start from the project root—the folder containing `package.json` and `backend`.
+## Quick start
 
-**Terminal 1 — install and start the API** (first two commands are needed only once):
+### Prerequisites
+
+- Node.js **20.19+ or 22.12+**, npm and a modern browser with WebGL.
+- Python **3.12** recommended for the optional API and research tests. The supplied model artifact requires scikit-learn **1.6.1**.
+
+Clone the repository and enter it:
+
+```bash
+git clone https://github.com/RANJITHROSAN17/cardiolens-3d-risk.git
+cd cardiolens-3d-risk
+```
+
+> The latest work may be on `prevention-research-upgrade` until merged. To try that branch, run `git switch prevention-research-upgrade` after cloning.
+
+### Option A: frontend-only synthetic demo
+
+```bash
+npm ci
+VITE_BASE_PATH=/ npm run dev
+```
+
+In PowerShell:
 
 ```powershell
+npm ci
+$env:VITE_BASE_PATH='/'
+npm run dev
+```
+
+Open the local address printed by Vite, normally **http://localhost:5173/**. No backend is needed. Scores are fabricated examples, not a trained model. Stop with **Ctrl+C**.
+
+### Option B: frontend + local research API
+
+On macOS/Linux, run:
+
+```bash
+./dev.sh
+```
+
+This installs dependencies as needed, starts FastAPI locally on port 8000, and starts Vite with its `/api` proxy enabled. Open the Vite address shown in the terminal. Stop with **Ctrl+C**.
+
+On Windows PowerShell, use two terminals from the repository root:
+
+```powershell
+# Terminal 1: create the environment once, install dependencies, start API
 py -3.12 -m venv backend\.venv
 backend\.venv\Scripts\python.exe -m pip install -r backend\requirements.txt
 Set-Location backend
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-If `py -3.12` is not recognized but `python --version` reports Python 3.12, use `python -m venv backend\.venv` for the first command. The commands call the virtual-environment Python directly, so activation is not required.
-
-**Terminal 2 — install and start the web app** (from the project root, not `backend`):
-
 ```powershell
+# Terminal 2: start web app through Vite's local API proxy
 npm ci
+$env:VITE_BASE_PATH='/'
+$env:VITE_USE_LOCAL_API='true'
 npm run dev
 ```
 
-Open **http://localhost:5173**. The Vite development server forwards `/api` requests to the local API on port `8000`. Stop each service with **Ctrl+C** in its terminal.
+Open **http://localhost:5173/**. The bundled model is selected when available; `/api/model-info` reports the active mode. If the bundle is absent, the **backend** uses an explicitly labeled synthetic demo. If a configured API fails, the frontend displays an error and does not silently substitute a result. API docs: **http://127.0.0.1:8000/docs**.
 
-### macOS or Linux
+`VITE_USE_LOCAL_API=true` uses Vite's development proxy only; it is not a production API configuration. Do not expose this unauthenticated research API publicly or send real health information to it. A separately hosted API needs its own security, authorization, HTTPS and cross-origin or reverse-proxy setup. Frontend environment variables are public—not a place for secrets.
+
+## What do the results mean?
+
+### Coronary research model
+
+The optional FastAPI bundle contains four fixed logistic-regression heads trained on the UCI extension of the Z-Alizadeh Sani dataset: **303 records from one source**. The heads output scores for a prevalent CAD label (`Cath`) and three vessel labels. The labels are excluded from predictors. The model is **not calibrated**, has no independent external or prospective validation, and does not estimate future heart attack or stroke risk.
+
+The model card reports repeated stratified five-fold *internal* cross-validation. For example, the overall CAD-label ROC-AUC is **0.936 ± 0.025**, while LCX is **0.727 ± 0.046** and RCA is **0.709 ± 0.058**; values are fold mean ± SD, not confidence intervals. These figures do not establish real-world performance. See the [model card](docs/model-card.md), [full metrics](backend/artifacts/metrics.json), and [data attribution](DATA_ATTRIBUTION.md).
+
+### Separate 10-year CHD dataset experiment
+
+A separate offline logistic-regression experiment on a public Framingham-labeled mirror produced a same-source held-out **ROC-AUC of 0.724** and **Brier score of 0.117** on 843 test rows. A constant-rate baseline Brier score was 0.128. This is an exploratory single split, not external validation. The dataset's outcome is **CHD**, not the proposed heart-attack-or-stroke composite; its provenance, follow-up and eligibility details are insufficiently verified. Results cannot be generalized to India or patient care. Raw data and the fitted experimental model are not included. See the [experiment report](docs/dataset-experiment.md) for methods, caveats and reproduction instructions.
+
+## Run tests and build
 
 From the project root:
 
 ```bash
-chmod +x ./dev.sh
-./dev.sh
-```
-
-The script creates the Python virtual environment and installs dependencies when needed, then starts the API and Vite. Open **http://localhost:5173**.
-
-## Try the prototype
-
-1. Start with **Balanced demo**, **Lower-factor demo**, or **Higher-factor demo** to load synthetic example inputs, or choose **New manual case** for a blank form.
-2. In manual mode, enter all required fields and explicitly choose Yes or No for every binary field.
-3. Select **Run research estimate**. Incomplete cases are not estimated; unsupported or out-of-range values are rejected.
-4. Rotate the 3D schematic, zoom, and select LAD, LCX, or RCA to inspect the corresponding whole-vessel display.
-5. Review the model version, calibration status, score, and local explanation. Treat all outputs as research-demo values only.
-
-The app is designed for one active case and does not provide a patient worklist or longitudinal history. Do not enter real patient information.
-
-## Model and evaluation
-
-The bundled artifact is `backend/artifacts/model_bundle.joblib` (`z-alizadeh-logistic-baseline`, version `research-1.1.0`). It contains four independent logistic-regression heads, using 22 curated fields from demographic, history/examination, ECG, laboratory, and echocardiography groups. The runtime pins scikit-learn to `1.6.1` to match the artifact.
-
-The source is the UCI **extension of the Z-Alizadeh Sani dataset** (303 records). The official workbook has no separate `CAD` column, so this implementation uses `Cath` (`CAD`/`Normal`) as the overall CAD label; `LAD`, `LCX`, and `RCA` are the vessel labels. Outcome/diagnostic fields `CAD`, `Cath`, `LAD`, `LCX`, and `RCA` are excluded from the predictors. The source CAD label differs from the OR of the three vessel labels in one of 303 records; the supplied source label is retained and the discrepancy is documented.
-
-### Internal cross-validation summary
-
-These are internal repeated stratified 5-fold cross-validation summaries (five repeats). Values are **mean ± standard deviation across folds**, not confidence intervals and not independent validation results.
-
-| Target | Accuracy | F1 | ROC-AUC |
-|---|---:|---:|---:|
-| CAD (`Cath`) | 0.853 ± 0.041 | 0.891 ± 0.034 | 0.936 ± 0.025 |
-| LAD | 0.758 ± 0.050 | 0.787 ± 0.049 | 0.848 ± 0.044 |
-| LCX | 0.674 ± 0.047 | 0.619 ± 0.060 | 0.727 ± 0.046 |
-| RCA | 0.641 ± 0.046 | 0.572 ± 0.052 | 0.709 ± 0.058 |
-
-Vessel-label performance is weaker than the overall CAD-label result, particularly for LCX and RCA. The cohort is small and single-source; external generalization is unknown. Full metric details, including precision, sensitivity, specificity, PR-AUC, and Brier score, are in [`backend/artifacts/metrics.json`](backend/artifacts/metrics.json) and [`docs/model-card.md`](docs/model-card.md).
-
-The original dataset file is **not** included. Attribution and license details are in [`DATA_ATTRIBUTION.md`](DATA_ATTRIBUTION.md). The included model artifact and metrics were derived from that source; see the attribution note for details.
-
-## API
-
-When the backend is running, interactive documentation is available at **http://127.0.0.1:8000/docs**.
-
-| Method | Endpoint | Purpose |
-|---|---|---|
-| `GET` | `/api/health` | Service status and active mode (`trained_research` or `synthetic_demo`) |
-| `GET` | `/api/model-info` | Model version, feature count, calibration status, and target metadata |
-| `GET` | `/api/sample-case` | Synthetic example inputs; no real patient rows are served |
-| `POST` | `/api/predict` | Estimate the CAD and vessel-label scores for one case |
-
-The prediction request uses schema version `0.2` and a `features` object containing the complete feature set. Missing values are not silently imputed at request time; incomplete inputs return `not_estimable`. Outcome/diagnostic fields cannot be submitted as predictors. Future-event risk is always reported as unavailable.
-
-## Tests and production build
-
-From the project root, after the backend virtual environment and Node dependencies are installed:
-
-```powershell
-.\backend\.venv\Scripts\python.exe -m pip install -r .\backend\requirements-dev.txt
-.\backend\.venv\Scripts\python.exe -m pytest .\backend\tests -q
+# Frontend / workflow unit tests and production build
+npm ci
+node --test tests/*.test.js
 npm run build
+
+# Backend and offline experiment tests (macOS/Linux)
+python3 -m venv backend/.venv
+backend/.venv/bin/python -m pip install -r backend/requirements-dev.txt
+backend/.venv/bin/python -m pytest backend/tests -q
+backend/.venv/bin/python -m unittest discover -s research -p 'test_*.py' -v
 ```
 
-The backend tests cover input validation, synthetic-mode behavior, label handling, and exclusion of outcome/diagnostic fields from predictors.
+On Windows, replace `backend/.venv/bin/python` with `backend\.venv\Scripts\python.exe`. Tests use synthetic inputs. CI runs these checks on pushes and pull requests. Passing tests verifies software behavior covered by the tests—not clinical safety or model validity.
 
-## Optional: retrain locally
-
-Retraining is an explicit offline action; it is **not** part of normal app use. Obtain the source dataset from UCI, review its license and data dictionary, and place your local `.xlsx` or `.csv` file in `backend/data/`. That directory is ignored by Git; do not commit the raw source data to a public repository.
-
-For example, from the project root in Windows PowerShell:
-
-```powershell
-Set-Location backend
-.\.venv\Scripts\python.exe -m ml.train --data data\z_alizadeh_extension.xlsx --out artifacts
-```
-
-Restart the API after retraining. The output bundle is a trusted local `joblib` artifact; only load bundles you created or otherwise trust, because joblib/pickle files can execute code when loaded. Review the manifest and metrics after every retraining run.
-
-## Repository map
+## Explore the repository
 
 ```text
-src/                         React dashboard and Three.js coronary schematic
-backend/app/main.py          FastAPI prediction API
-backend/ml/train.py          Explicit, leakage-controlled training script
-backend/artifacts/            Fixed model bundle, metrics, feature manifest
-backend/tests/                Backend smoke and validation tests
-docs/model-card.md            Model details, metrics, intended use, limitations
-docs/project-spec.md          Project specification and design documentation
-DATA_ATTRIBUTION.md           UCI source attribution and license note
-LICENSE                       MIT license for the code in this repository
+src/                         React UI, Three.js scene, fictional workflow & aggregate results
+backend/app/                 FastAPI research/demo endpoints
+backend/ml/                  Offline training for the source-cohort CAD model
+backend/artifacts/           Bundled model, feature manifest and internal metrics
+backend/tests/               API, input validation and leakage tests
+research/                    Separate CHD experiment and synthetic tests
+tests/                       Frontend validation and workflow unit tests
+docs/                        Model card, experiment report, Pages guide and roadmap
 ```
 
-## Before any clinical research or deployment
+- [Model card](docs/model-card.md) · [Dataset experiment](docs/dataset-experiment.md) · [Data attribution](DATA_ATTRIBUTION.md)
+- [Prevention research plan](docs/prevention-risk-plan.md) · [Follow-through proposal](docs/prevention-follow-through.md) · [Product blueprint](docs/product-blueprint.md)
+- [GitHub Pages guide](docs/github-pages.md) · [Project specification](docs/project-spec.md)
 
-Independent validation on representative data, calibration assessment, clinically justified thresholds, subgroup/fairness evaluation, human-factors testing, privacy/security controls, review of the anatomical visualization, and jurisdiction-specific regulatory assessment would all be required. This repository does not provide those assurances.
+The source datasets are not bundled. The offline training script requires separately obtained, appropriately licensed data; see [data attribution](DATA_ATTRIBUTION.md). Load only trusted `joblib` artifacts: pickle-based files can execute code.
 
-## References
+## Share feedback & contribute
 
-- [UCI extension of the Z-Alizadeh Sani dataset](https://archive.ics.uci.edu/dataset/411/extention+of+z+alizadeh+sani+dataset)
-- [Dataset attribution and license](DATA_ATTRIBUTION.md)
-- [Model card](docs/model-card.md)
-- [Project specification](docs/project-spec.md)
+We welcome feedback from clinicians, patients, designers, researchers and developers. You do **not** need to be a medical AI expert to help.
+
+- [Open an issue](https://github.com/RANJITHROSAN17/cardiolens-3d-risk/issues/new) with a bug, usability finding, accessibility concern or research question.
+- Include steps to reproduce, expected and actual behavior, browser/OS, and screenshots **containing fictional data only**. Never post patient information, credentials or sensitive records.
+- For code changes, fork the repo, create a focused branch, run the tests above, and open a pull request describing the change and its limitations. Please avoid unsupported medical claims or unverified datasets.
+- If you are a clinician or researcher interested in collaboration, describe your expertise and intended contribution in an issue without sharing confidential information.
+
+Before a clinical pilot, the project needs a clearly defined intended use, representative independent validation, calibration and subgroup analysis, human-factors testing, privacy/security controls, institutional and ethics approvals as applicable, and regulatory assessment. No performance metric or disclaimer replaces those steps.
 
 ## License
 
-Code in this repository is released under the [MIT License](LICENSE). The source dataset is **not**
-included and is governed by its own terms — see [`DATA_ATTRIBUTION.md`](DATA_ATTRIBUTION.md). The
-bundled model artifact and metrics are research artifacts derived from that dataset and carry the
-same research-only limitations described above.
-
-See [the product blueprint](docs/product-blueprint.md) for a research-to-clinical roadmap and safety gates.
-
-For the selected primary-prevention direction, see [the 10-year prevention research plan](docs/prevention-risk-plan.md).
-
-### Prevention follow-through concept
-
-The interactive fictional worklist explores screening-to-follow-up stages without collecting patient data or computing clinical risk. See [the evidence and product proposal](docs/prevention-follow-through.md). This is a research simulation, not a clinical worklist; it does not save, schedule, message, diagnose, triage or predict.
-
-### Dataset experiment & GitHub Pages
-
-- [Exploratory dataset experiment, results and reproduction](docs/dataset-experiment.md) — 10-year CHD label, a different target from the proposed heart-attack-or-stroke composite; not clinical validation.
-- [How to use and deploy GitHub Pages](docs/github-pages.md) — the live site updates only after an eligible workflow deployment.
+Repository code is licensed under [MIT](LICENSE). Datasets and third-party materials have their own terms; see [DATA_ATTRIBUTION.md](DATA_ATTRIBUTION.md). The model and evaluation artifacts are research-only.

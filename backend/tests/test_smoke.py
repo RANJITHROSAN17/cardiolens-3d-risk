@@ -69,3 +69,32 @@ def test_binary_label_decoder_fails_closed_on_unknown_labels():
     assert parse_binary_label("Stenotic", "LAD") == 1
     with pytest.raises(ValueError):
         parse_binary_label("maybe", "CAD")
+
+
+def test_demo_rejects_fractional_rwma_bad_sex_and_outcome():
+    for overrides in ({"region_rwma": 1.5}, {"sex": "Other"}, {"Cath": "CAD"}):
+        with pytest.raises(ValueError):
+            _checked_demo_features({**DEMO, **overrides})
+
+
+def test_research_rejects_fractional_rwma():
+    if BUNDLE is None:
+        pytest.skip("optional model bundle is not installed")
+    with pytest.raises(ValueError):
+        _bundle_predict({**DEMO, "region_rwma": 1.5}, BUNDLE)
+
+
+def test_api_endpoints_and_schema_version():
+    from fastapi.testclient import TestClient
+    from app.main import app
+    client = TestClient(app)
+    assert client.get('/api/health').status_code == 200
+    assert client.get('/api/model-info').json()['future_risk_available'] is False
+    assert client.get('/api/sample-case').json()['features'] == DEMO
+    bad = client.post('/api/predict', json={'schema_version': '99', 'features': DEMO})
+    assert bad.status_code == 422
+    result = client.post('/api/predict', json={'schema_version': '0.2', 'features': DEMO})
+    assert result.status_code == 200
+    assert result.json()['future_risk']['status'] == 'unavailable'
+    bad = client.post('/api/predict', json={'schema_version': '0.2', 'features': {**DEMO, 'region_rwma': 1.5}})
+    assert bad.status_code == 422

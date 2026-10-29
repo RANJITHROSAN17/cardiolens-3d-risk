@@ -104,6 +104,8 @@ def _checked_demo_features(raw: dict[str, Any]) -> dict[str, Any]:
         "region_rwma": ["region_rwma", "region rwma", "rwma source code"],
         "vhd": ["vhd"],
     }
+    if any(_norm_key(key) in FORBIDDEN_FEATURES for key in raw):
+        raise ValueError("Outcome/diagnostic fields are not accepted as predictors")
     indexed = {_norm_key(key): value for key, value in raw.items()}
     result: dict[str, Any] = {}
     missing: list[str] = []
@@ -123,9 +125,14 @@ def _checked_demo_features(raw: dict[str, Any]) -> dict[str, Any]:
             raise ValueError(f"{name} must be numeric") from None
         if not low <= value <= high:
             raise ValueError(f"{name} must be between {low} and {high} for this demo form")
+        if name == "region_rwma" and not value.is_integer():
+            raise ValueError("region_rwma must be an integer source code")
         result[name] = int(value) if name == "region_rwma" else value
 
-    result["sex"] = str(result["sex"])
+    sex = str(result["sex"]).strip().lower()
+    if sex not in {"female", "male"}:
+        raise ValueError("sex must be Female or Male for this demo schema")
+    result["sex"] = sex.title()
     for name in BOOLEAN_FEATURES | {"lvh"}:
         result[name] = _as_bool(result[name], name)
     if result["smoking"] and result["ex_smoker"]:
@@ -277,6 +284,8 @@ def _bundle_predict(raw_features: dict[str, Any], bundle: dict[str, Any]) -> dic
             raise ValueError(f"{key} must be numeric") from None
         if not low <= value <= high:
             raise ValueError(f"{key} must be between {low} and {high}")
+        if key == "region_rwma" and not value.is_integer():
+            raise ValueError("region_rwma must be an integer source code")
         row[key] = int(value) if key == "region_rwma" else value
     # Training data contain numeric 0/1 flags, while the form uses real booleans.
     for key in BOOLEAN_FEATURES:
@@ -415,6 +424,8 @@ def sample_case() -> dict[str, Any]:
 
 @app.post("/api/predict")
 def predict(request: PredictionRequest) -> JSONResponse:
+    if request.schema_version != "0.2":
+        return JSONResponse(status_code=422, content={"status": "invalid_input", "message": "Unsupported schema_version; expected 0.2"})
     try:
         if BUNDLE:
             result = _bundle_predict(request.features, BUNDLE)
