@@ -29,4 +29,9 @@ updates:
     groups:
       backend-pip:
         patterns: ["*"]
+        update-types: ["minor", "patch"]
+    ignore:
+      # Keep scikit-learn minor/major aligned with serialized coronary_risk_bundle.joblib until re-trained
+      - dependency-name: "scikit-learn"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
     labels: ["dependencies", "area/api"]
