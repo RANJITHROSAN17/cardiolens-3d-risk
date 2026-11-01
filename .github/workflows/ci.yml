@@ -1,0 +1,71 @@
+name: Verify research prototype
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    name: Frontend tests & Vite build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install web dependencies
+        run: npm ci
+
+      - name: Run frontend validation tests
+        run: node --test tests/*.test.js
+
+      - name: Build production bundle
+        run: npm run build
+
+  backend-and-bots:
+    name: Backend smoke tests & bot validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+
+      - name: Install backend & dev dependencies
+        run: python -m pip install -r backend/requirements-dev.txt
+
+      - name: Validate GitHub Actions workflows
+        run: python .github/scripts/validate_workflows.py
+
+      - name: Dry-run roadmap curator & status bots
+        run: |
+          python .github/scripts/sync_roadmap_issues.py --dry-run
+          python .github/scripts/roadmap_status.py --dry-run
+
+      - name: Run backend & bot pytest suite
+        env:
+          PYTHONPATH: backend
+        run: python -m pytest backend/tests -q
+
+      - name: Confirm no credential shapes are committed
+        run: |
+          pattern='(sk-[A-Za-z0-9]{24,}|ghp_[A-Za-z0-9]{24,}|gho_[A-Za-z0-9]{24,}|github_pat_[A-Za-z0-9_]{30,})'
+          if git grep -nEI "$pattern" -- . ':!.github/workflows/ci.yml' ; then
+            echo "::error::a credential appears to be committed"
+            exit 1
+          fi

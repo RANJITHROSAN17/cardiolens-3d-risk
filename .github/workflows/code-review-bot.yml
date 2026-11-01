@@ -1,0 +1,140 @@
+name: PR Guide & Governance Bot
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: pr-guide-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  guide:
+    name: Size, area labels, gates, and roadmap context
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+
+      - name: Install frontend and backend dependencies
+        run: |
+          npm ci
+          python -m pip install -r backend/requirements-dev.txt
+
+      - name: Run frontend and backend gates
+        id: gates
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          echo "| Gate | Result |" > gates.md
+          echo "|---|---|" >> gates.md
+
+          node --test tests/*.test.js
+          NODE_TEST=$?
+          npm run build
+          VITE_BUILD=$?
+          PYTHONPATH=backend python -m pytest backend/tests -q
+          PYTEST=$?
+
+          [ $NODE_TEST -eq 0 ] && echo "| Frontend validation tests | pass |" >> gates.md || echo "| Frontend validation tests | **fail** |" >> gates.md
+          [ $VITE_BUILD -eq 0 ] && echo "| Vite production build | pass |" >> gates.md || echo "| Vite production build | **fail** |" >> gates.md
+          [ $PYTEST -eq 0 ] && echo "| FastAPI & model smoke tests | pass |" >> gates.md || echo "| FastAPI & model smoke tests | **fail** |" >> gates.md
+
+          OVERALL=$(( NODE_TEST || VITE_BUILD || PYTEST ))
+          echo "overall=$OVERALL" >> "$GITHUB_OUTPUT"
+
+      - name: Map changed files to roadmap items
+        if: always()
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          git diff --name-only "$BASE_SHA" "$HEAD_SHA" > changed_files.txt
+          python -c "import os,pathlib; pathlib.Path('pr_body.md').write_text(os.environ.get('PR_BODY') or '')"
+          python .github/scripts/pr_context.py --changed changed_files.txt --body pr_body.md --out context.md
+
+      - name: Apply size/area labels and update sticky PR comment
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          OVERALL: ${{ steps.gates.outputs.overall }}
+        with:
+          script: |
+            const fs = require('fs');
+            const pr = context.payload.pull_request;
+            const { owner, repo } = context.repo;
+            const issue_number = pr.number;
+
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner, repo, pull_number: issue_number, per_page: 100,
+            });
+            let totalLines = 0;
+            const areaLabels = new Set();
+            for (const f of files) {
+              totalLines += (f.additions || 0) + (f.deletions || 0);
+              const p = f.filename;
+              if (p === 'src/HeartScene.jsx' || p === 'src/styles.css') areaLabels.add('area/visualization');
+              if (p.startsWith('backend/ml/') || p.startsWith('backend/artifacts/') || p === 'docs/model-card.md') areaLabels.add('area/model');
+              if (p.startsWith('backend/app/')) areaLabels.add('area/api');
+              if (p === 'src/validation.js' || p.includes('validation')) areaLabels.add('area/safety');
+              if (p.startsWith('.github/')) areaLabels.add('area/ci');
+              if (p.endsWith('.md')) areaLabels.add('area/docs');
+            }
+            let sizeLabel = 'size/XL';
+            if (totalLines < 25) sizeLabel = 'size/XS';
+            else if (totalLines < 100) sizeLabel = 'size/S';
+            else if (totalLines < 300) sizeLabel = 'size/M';
+            else if (totalLines < 600) sizeLabel = 'size/L';
+
+            const existing = (pr.labels || []).map((l) => l.name).filter((n) => !n.startsWith('size/'));
+            await github.rest.issues.setLabels({
+              owner, repo, issue_number,
+              labels: Array.from(new Set([...existing, sizeLabel, ...areaLabels])),
+            });
+
+            const marker = '<!-- pr-guide-bot -->';
+            const gates = fs.existsSync('gates.md') ? fs.readFileSync('gates.md', 'utf8').trim() : '';
+            const ctx = fs.existsSync('context.md') ? fs.readFileSync('context.md', 'utf8').trim() : '';
+            const passed = process.env.OVERALL === '0';
+            const body = [
+              marker,
+              `## ${passed ? 'Research Prototype Gates Passing' : 'Research Prototype Gates Failing'}`,
+              '',
+              gates,
+              '',
+              ctx,
+              '',
+              '---',
+              '<sub>Single sticky comment rewritten on every push. Research-only prototype — never commit patient identifiers or PHI.</sub>',
+            ].join('\n');
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number, per_page: 100,
+            });
+            const found = comments.find((c) => (c.body || '').includes(marker));
+            if (found) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: found.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }

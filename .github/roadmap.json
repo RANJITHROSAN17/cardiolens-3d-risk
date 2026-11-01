@@ -1,0 +1,342 @@
+{
+  "_comment": "Curated research-prototype backlog for CardioLens 3D. Grounded in docs/model-card.md and docs/prevention-risk-plan.md. All items preserve strict non-clinical, synthetic-only safety boundaries.",
+  "plan_doc": "docs/prevention-risk-plan.md",
+  "max_open_roadmap_issues": 4,
+  "min_open_good_first_issues": 2,
+  "verification": [
+    "npm ci",
+    "node --test tests/*.test.js",
+    "npm run build",
+    "python -m pip install -r backend/requirements-dev.txt",
+    "python -m pytest backend/tests -q"
+  ],
+  "labels": [
+    {
+      "name": "roadmap",
+      "color": "1d76db",
+      "description": "Curated research task managed by the CardioLens Roadmap Bot"
+    },
+    {
+      "name": "good first issue",
+      "color": "7057ff",
+      "description": "Well-scoped task with clear files and test cases"
+    },
+    {
+      "name": "help wanted",
+      "color": "008672",
+      "description": "Open for community pull requests"
+    },
+    {
+      "name": "difficulty/easy",
+      "color": "0e8a16",
+      "description": "Focused ~30-80 LOC change in one layer"
+    },
+    {
+      "name": "difficulty/medium",
+      "color": "fbca04",
+      "description": "Moderate feature spanning frontend/backend or 3D scene"
+    },
+    {
+      "name": "difficulty/hard",
+      "color": "d93f0b",
+      "description": "Deeper statistical evaluation or 3D architecture work"
+    },
+    {
+      "name": "area/visualization",
+      "color": "5319e7",
+      "description": "Three.js 3D coronary schematic and interactive UI"
+    },
+    {
+      "name": "area/model",
+      "color": "006b75",
+      "description": "Baseline logistic-regression heads, metrics, and calibration"
+    },
+    {
+      "name": "area/api",
+      "color": "0052cc",
+      "description": "FastAPI service, schemas, and reproducible JSON exports"
+    },
+    {
+      "name": "area/safety",
+      "color": "d73a4a",
+      "description": "Input integrity, PHI firewall, leakage guards, and non-clinical boundaries"
+    },
+    {
+      "name": "area/ci",
+      "color": "bfdadc",
+      "description": "GitHub Actions workflows and repository automation"
+    },
+    {
+      "name": "area/docs",
+      "color": "0075ca",
+      "description": "Model card, attribution, and research documentation"
+    },
+    {
+      "name": "type/feature",
+      "color": "a2eeef",
+      "description": "New research prototype capability"
+    },
+    {
+      "name": "type/bug",
+      "color": "d73a4a",
+      "description": "Defect or validation mismatch"
+    },
+    {
+      "name": "type/explainability",
+      "color": "fbca04",
+      "description": "Model transparency, uncertainty, and calibration clarity"
+    },
+    {
+      "name": "type/reproducibility",
+      "color": "c2e0c6",
+      "description": "Deterministic exports, hashes, and evaluation evidence"
+    },
+    {
+      "name": "type/security",
+      "color": "ee0701",
+      "description": "PHI prevention and input hardening"
+    },
+    {
+      "name": "size/XS",
+      "color": "ededed",
+      "description": "PR touches < 25 lines"
+    },
+    {
+      "name": "size/S",
+      "color": "c5def5",
+      "description": "PR touches 25-99 lines"
+    },
+    {
+      "name": "size/M",
+      "color": "fef2c0",
+      "description": "PR touches 100-299 lines"
+    },
+    {
+      "name": "size/L",
+      "color": "f9d0c4",
+      "description": "PR touches 300-599 lines"
+    },
+    {
+      "name": "size/XL",
+      "color": "e99695",
+      "description": "PR touches 600+ lines"
+    },
+    {
+      "name": "status/pending-release",
+      "color": "fbca47",
+      "description": "Merged to main, pending version bump/release"
+    },
+    {
+      "name": "dependencies",
+      "color": "0366d6",
+      "description": "Automated dependency updates"
+    },
+    {
+      "name": "pinned",
+      "color": "b60205",
+      "description": "Exempt from stale nudges"
+    },
+    {
+      "name": "stale",
+      "color": "ededed",
+      "description": "No activity for 60 days (nudged, never auto-closed)"
+    }
+  ],
+  "items": [
+    {
+      "id": "CL-001",
+      "title": "test(safety): enforce schema parity between src/validation.js and backend/app/main.py",
+      "summary": "Frontend input bounds (`src/validation.js`) and FastAPI bounds (`NUMERIC_RANGES` / `BOOLEAN_FEATURES` in `backend/app/main.py`) are maintained in two files with no automated cross-check.",
+      "motivation": "If a numeric range or categorical enum (`sex`, `vhd`, `region_rwma`, `smoking`/`ex_smoker` mutual exclusion) drifts between browser demo mode and FastAPI mode, one path accepts inputs the other rejects.",
+      "files": [
+        "src/validation.js",
+        "backend/app/main.py",
+        "backend/tests/test_smoke.py",
+        "tests/validation.test.js"
+      ],
+      "acceptance_criteria": [
+        "Export machine-readable bounds/enums from `src/validation.js` (or shared JSON spec) and assert exact parity against `NUMERIC_RANGES`, `BOOLEAN_FEATURES`, `sex`, and `vhd` in `backend/tests/test_smoke.py`",
+        "Verify both frontend and backend reject simultaneous `smoking: true` and `ex_smoker: true`, non-integer `region_rwma`, and diagnostic leakage keys (`CAD`, `Cath`, `LAD`, `LCX`, `RCA`)",
+        "All existing Node and pytest checks remain green"
+      ],
+      "labels": [
+        "roadmap",
+        "good first issue",
+        "help wanted",
+        "difficulty/easy",
+        "area/safety",
+        "area/api",
+        "type/reproducibility"
+      ]
+    },
+    {
+      "id": "CL-002",
+      "title": "feat(explainability): surface fold dispersion (mean \u00b1 SD, Brier, PR-AUC) per vessel head in UI and API",
+      "summary": "`backend/artifacts/metrics.json` records repeated stratified 5-fold CV dispersion showing LCX (`ROC-AUC 0.727`, `Brier 0.215`) and RCA (`0.709`, `0.220`) perform substantially worse than overall CAD (`0.936`, `0.102`), yet vessel cards display raw uncalibrated point scores without head-specific performance context.",
+      "motivation": "In a research tool, showing `0.62` on RCA next to `0.62` on CAD without head-level validation context invites over-interpretation of the weaker vessel heads (`docs/model-card.md`).",
+      "files": [
+        "backend/app/main.py",
+        "backend/artifacts/metrics.json",
+        "src/App.jsx",
+        "backend/tests/test_smoke.py"
+      ],
+      "acceptance_criteria": [
+        "Expose per-target CV summary (`roc_auc`, `pr_auc`, `brier`, mean \u00b1 SD across folds, and `n=303` cohort note) from `backend/artifacts/metrics.json` via the API metadata endpoint and bundled static fallback",
+        "Display each selected vessel head's internal CV ROC-AUC \u00b1 SD and Brier score alongside its uncalibrated score in `src/App.jsx`",
+        "Keep explicit copy stating these are internal CV summaries, not patient-level confidence intervals or clinical probabilities"
+      ],
+      "labels": [
+        "roadmap",
+        "good first issue",
+        "help wanted",
+        "difficulty/easy",
+        "area/model",
+        "type/explainability"
+      ]
+    },
+    {
+      "id": "CL-003",
+      "title": "feat(vis): add colorblind-safe palette toggle and non-WebGL schematic fallback in HeartScene.jsx",
+      "summary": "`src/HeartScene.jsx` encodes score intensity solely via a teal-amber-rose (`#2aa99a` -> `#e2b04a` -> `#d84d70`) color ramp and assumes `THREE.WebGLRenderer` creation always succeeds.",
+      "motivation": "Color-only encoding is hard to distinguish under deuteranopia/protanopia, and headless browsers, locked-down VMs, or disabled WebGL contexts throw on `new THREE.WebGLRenderer()` instead of degrading cleanly.",
+      "files": [
+        "src/HeartScene.jsx",
+        "src/App.jsx",
+        "src/styles.css",
+        "tests/validation.test.js"
+      ],
+      "acceptance_criteria": [
+        "Add a high-contrast / colorblind-safe Viridis- or Okabe-Ito-inspired vessel ramp option alongside numeric badge labels so vessel state never relies on hue alone",
+        "Catch WebGL context creation failure in `src/HeartScene.jsx` and render an accessible 2D SVG/card schematic fallback allowing LAD, LCX, and RCA selection without crashing",
+        "Extract pure color-ramp and fallback helpers with unit tests under `tests/`"
+      ],
+      "labels": [
+        "roadmap",
+        "help wanted",
+        "difficulty/medium",
+        "area/visualization",
+        "type/feature"
+      ]
+    },
+    {
+      "id": "CL-004",
+      "title": "feat(api): add reproducible research JSON report export with bundle SHA-256 and PHI-key firewall",
+      "summary": "Researchers inspecting synthetic cases cannot currently export a self-describing, reproducible JSON record tying an estimate to the exact model artifact hash, schema version, and uncalibrated disclaimer.",
+      "motivation": "Reproducible research requires versioned, self-documenting outputs (`docs/prevention-risk-plan.md` \u00a75), and any export surface must strictly reject unexpected identifier/PHI fields.",
+      "files": [
+        "backend/app/main.py",
+        "src/App.jsx",
+        "src/validation.js",
+        "backend/tests/test_smoke.py"
+      ],
+      "acceptance_criteria": [
+        "Reject input payloads containing unexpected keys or identifier-named fields (`name`, `patient_id`, `mrn`, `dob`, `email`, `phone`, `address`) in both `src/validation.js` and `backend/app/main.py`",
+        "Add a reproducible JSON report builder/download including `schema_version`, `mode` (`trained_research` vs `synthetic_demo`), `model_bundle_sha256`, `scikit_learn_version`, validated synthetic inputs, uncalibrated head outputs, log-odds contributions, and mandatory non-clinical disclaimer",
+        "Add pytest and `node:test` coverage verifying deterministic structure and PHI-key refusal"
+      ],
+      "labels": [
+        "roadmap",
+        "help wanted",
+        "difficulty/medium",
+        "area/api",
+        "area/safety",
+        "type/reproducibility"
+      ]
+    },
+    {
+      "id": "CL-005",
+      "title": "feat(safety): add client and FastAPI identifier/free-text guard against accidental PHI entry",
+      "summary": "`README.md` warns never to enter names, identifiers, or PHI, and code-level enforcement should back up that prose warning.",
+      "motivation": "A safety boundary enforced in code (`src/validation.js` and `backend/app/main.py`) is strictly stronger than a banner warning alone.",
+      "files": [
+        "src/validation.js",
+        "backend/app/main.py",
+        "tests/validation.test.js",
+        "backend/tests/test_smoke.py"
+      ],
+      "acceptance_criteria": [
+        "Enforce a closed allowlist of the 22 canonical predictor keys (plus documented aliases in `backend/app/main.py`), rejecting unknown keys with HTTP 422 / validation errors",
+        "Ensure FastAPI error responses never echo raw unvalidated free-text payloads into logs",
+        "Add unit tests in `tests/validation.test.js` and `backend/tests/test_smoke.py`"
+      ],
+      "labels": [
+        "roadmap",
+        "good first issue",
+        "help wanted",
+        "difficulty/easy",
+        "area/safety",
+        "type/security"
+      ]
+    },
+    {
+      "id": "CL-006",
+      "title": "feat(model): record out-of-fold calibration bins, slope, and intercept in backend/ml/train.py",
+      "summary": "`docs/model-card.md` notes no post-hoc calibration is applied and reports Brier score only; researchers cannot inspect whether uncalibrated scores over- or under-predict across deciles/fifths.",
+      "motivation": "`docs/prevention-risk-plan.md` \u00a75 explicitly calls for calibration plots, calibration slope, and intercept alongside ROC-AUC, PR-AUC, and Brier score.",
+      "files": [
+        "backend/ml/train.py",
+        "backend/artifacts/metrics.json",
+        "docs/model-card.md",
+        "backend/tests/test_smoke.py"
+      ],
+      "acceptance_criteria": [
+        "Compute out-of-fold quantile calibration bins (mean predicted score vs observed fraction), calibration slope, and calibration intercept for `Cath`, `LAD`, `LCX`, and `RCA` in `backend/ml/train.py`",
+        "Add unit tests on a synthetic stratified DataFrame verifying bin counts, monotonicity/bounds, and zero target leakage",
+        "Document how to interpret uncalibrated slope/intercept in `docs/model-card.md`"
+      ],
+      "labels": [
+        "roadmap",
+        "help wanted",
+        "difficulty/medium",
+        "area/model",
+        "type/explainability"
+      ]
+    },
+    {
+      "id": "CL-007",
+      "title": "feat(vis): keyboard vessel navigation, ARIA live announcements, and camera view presets",
+      "summary": "Rotating the 3D coronary schematic and picking vessels in `src/HeartScene.jsx` relies primarily on pointer raycasting and drag controls.",
+      "motivation": "Keyboard-only users and structured demo walkthroughs benefit from deterministic camera presets (Anterior, LAO, RAO, Reset) and screen-reader announcements when switching between LAD, LCX, and RCA.",
+      "files": [
+        "src/HeartScene.jsx",
+        "src/App.jsx",
+        "src/styles.css"
+      ],
+      "acceptance_criteria": [
+        "Add Anterior / LAO / RAO / Reset view buttons and keyboard shortcuts (`1`/`2`/`3` or arrow keys) synced with `activeVessel`",
+        "Announce selected vessel name, mode, and uncalibrated research status via an `aria-live=\"polite\"` region",
+        "Respect `prefers-reduced-motion` by disabling auto-rotation/tweening when requested"
+      ],
+      "labels": [
+        "roadmap",
+        "help wanted",
+        "difficulty/medium",
+        "area/visualization",
+        "type/feature"
+      ]
+    },
+    {
+      "id": "CL-008",
+      "title": "feat(model): subgroup & missing-input sensitivity diagnostics for internal CV",
+      "summary": "`docs/model-card.md` notes single-source spectrum bias and absence of subgroup reporting across sex and age strata.",
+      "motivation": "Surfacing subgroup sample sizes (`n`) and metric dispersion highlights small-cohort uncertainty directly inside the evaluation pipeline (`docs/prevention-risk-plan.md` \u00a75).",
+      "files": [
+        "backend/ml/train.py",
+        "docs/model-card.md",
+        "backend/tests/test_smoke.py"
+      ],
+      "acceptance_criteria": [
+        "Add a subgroup summary helper in `backend/ml/train.py` computing stratified metrics by `Sex` and age bands (`<50`, `50-65`, `>65`) while flagging strata with `<30` cases as underpowered",
+        "Cover underpowered-stratum flagging and leakage exclusion in `backend/tests/test_smoke.py`",
+        "Update `docs/model-card.md` limitations section with subgroup interpretation guardrails"
+      ],
+      "labels": [
+        "roadmap",
+        "help wanted",
+        "difficulty/hard",
+        "area/model",
+        "type/reproducibility"
+      ]
+    }
+  ]
+}

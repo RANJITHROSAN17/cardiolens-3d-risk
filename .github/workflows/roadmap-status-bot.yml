@@ -1,0 +1,53 @@
+name: Roadmap Status Bot
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "docs/prevention-risk-plan.md"
+      - "docs/model-card.md"
+      - ".github/roadmap.json"
+      - ".github/scripts/roadmap_status.py"
+      - ".github/workflows/roadmap-status-bot.yml"
+  issues:
+    types: [opened, closed]
+  schedule:
+    - cron: "30 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: roadmap-status
+  cancel-in-progress: true
+
+jobs:
+  status:
+    name: Publish or update the rolling roadmap status issue
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Render status markdown (offline check)
+        run: python .github/scripts/roadmap_status.py --dry-run --out roadmap_status.md
+
+      - name: Publish or update status issue
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python .github/scripts/roadmap_status.py
+
+      - name: Job summary
+        if: always()
+        run: cat roadmap_status.md >> "$GITHUB_STEP_SUMMARY"

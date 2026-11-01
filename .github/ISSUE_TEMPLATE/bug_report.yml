@@ -1,0 +1,29 @@
+name: Bug report
+description: Report a reproducible defect in the 3D schematic, validation layer, or FastAPI research service
+labels: ["type/bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **⚠️ Zero-PHI reminder:** Use synthetic demo presets or invented values only. Never paste real patient data or identifiers.
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Clear description of the defect vs expected research-prototype behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce (synthetic inputs only)
+      placeholder: |
+        1. Select 'Balanced demo' (or enter synthetic values)...
+        2. Click 'Run research estimate'...
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: Environment (Browser / OS / Node / Python)
+      placeholder: "Chrome 132, Ubuntu 24.04, Node 22, Python 3.12"

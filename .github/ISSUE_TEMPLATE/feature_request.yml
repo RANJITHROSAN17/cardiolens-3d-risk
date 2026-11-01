@@ -1,0 +1,21 @@
+name: Research feature / visualization improvement
+description: Propose an improvement to 3D rendering, model uncertainty/explainability, or reproducible exports
+labels: ["type/feature"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Proposals must preserve CardioLens 3D's **research-only, non-clinical** boundaries (`docs/model-card.md`).
+  - type: textarea
+    id: problem
+    attributes:
+      label: Research or usability gap
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change & affected files
+      placeholder: "e.g. `src/HeartScene.jsx`, `backend/app/main.py`..."
+    validations:
+      required: true

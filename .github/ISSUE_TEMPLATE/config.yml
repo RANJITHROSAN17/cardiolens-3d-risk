@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: "🫀 Research Roadmap & Good First Issues"
+    url: "https://github.com/RANJITHROSAN17/cardiolens-3d-risk/labels/good%20first%20issue"
+    about: "Curated, self-contained tasks across 3D visualization, model explainability, and FastAPI validation."
+  - name: "⚠️ Research-Only Scope & Model Card"
+    url: "https://github.com/RANJITHROSAN17/cardiolens-3d-risk/blob/main/docs/model-card.md"
+    about: "CardioLens 3D is a non-clinical research prototype. Never include patient names, identifiers, or PHI in issues."
