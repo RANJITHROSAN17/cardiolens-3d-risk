@@ -185,6 +185,10 @@ Independent validation on representative data, calibration assessment, clinicall
 - [Model card](docs/model-card.md)
 - [Project specification](docs/project-spec.md)
 
+## Maintainer
+
+**[Ranjith Rosan](https://github.com/RANJITHROSAN17)** maintains CardioLens 3D, this research-only coronary visualisation prototype. Source-dataset attribution is documented in [DATA_ATTRIBUTION.md](DATA_ATTRIBUTION.md); maintainer credit does not imply clinical validation.
+
 ## License
 
 Code in this repository is released under the [MIT License](LICENSE). The source dataset is **not**
