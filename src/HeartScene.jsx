@@ -1,8 +1,8 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-const VESSEL_IDS = ['lad', 'lcx', 'rca'];
+import { VESSEL_IDS, FALLBACK_PATHS, scoreColor, vesselCards, tryCreateRenderer } from './heart-visualization.js';
 const VESSEL_PATHS = {
   lad: [
     [-0.02, 0.70, 0.285], [-0.02, 0.50, 0.315], [0.055, 0.28, 0.315],
@@ -17,18 +17,6 @@ const VESSEL_PATHS = {
     [0.62, 0.19, 0.275], [0.52, -0.08, 0.27], [0.26, -0.27, 0.245],
   ],
 };
-
-function scoreColor(score) {
-  if (!Number.isFinite(score)) return new THREE.Color('#9eabb4');
-  const stops = [
-    { at: 0, color: new THREE.Color('#2aa99a') },
-    { at: 0.5, color: new THREE.Color('#e2b04a') },
-    { at: 1, color: new THREE.Color('#d84d70') },
-  ];
-  const t = THREE.MathUtils.clamp(score, 0, 1);
-  if (t <= 0.5) return stops[0].color.clone().lerp(stops[1].color, t * 2);
-  return stops[1].color.clone().lerp(stops[2].color, (t - 0.5) * 2);
-}
 
 function makeTube(points, radius, color, parent, vesselId = null, pickables = []) {
   const curve = new THREE.CatmullRomCurve3(points.map(([x, y, z]) => new THREE.Vector3(x, y, z)));
@@ -49,27 +37,28 @@ function makeTube(points, radius, color, parent, vesselId = null, pickables = []
   return mesh;
 }
 
-function scoreFor(results, id) {
-  const value = results?.vessels?.[id]?.score;
-  return typeof value === 'number' && Number.isFinite(value) ? value : null;
-}
-
-export default function HeartScene({ results, activeVessel, onVesselSelect }) {
+export default function HeartScene({ results, activeVessel, onVesselSelect, onModeChange, palette = 'viridis' }) {
+  const [webglFailed, setWebglFailed] = useState(false);
+  const cards = vesselCards(results);
   const hostRef = useRef(null);
   const meshRef = useRef({});
   const onSelectRef = useRef(onVesselSelect);
 
   useEffect(() => { onSelectRef.current = onVesselSelect; }, [onVesselSelect]);
+  useEffect(() => { onModeChange?.(webglFailed ? 'fallback' : 'webgl'); }, [webglFailed, onModeChange]);
 
   useEffect(() => {
     const host = hostRef.current;
-    if (!host) return undefined;
+    if (!host || webglFailed) return undefined;
 
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 40);
     camera.position.set(0, 0.08, 5.25);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'low-power' });
+    const renderer = tryCreateRenderer(() => new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'low-power' }));
+    if (!renderer) { setWebglFailed(true); return undefined; }
+    const contextLost = (event) => { event.preventDefault(); setWebglFailed(true); };
+    renderer.domElement.addEventListener('webglcontextlost', contextLost);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -193,7 +182,8 @@ export default function HeartScene({ results, activeVessel, onVesselSelect }) {
     renderer.domElement.addEventListener('pointerdown', pointerDown);
     renderer.domElement.addEventListener('pointerup', pointerUp);
     renderer.domElement.addEventListener('pointermove', pointerMove);
-    renderer.domElement.addEventListener('pointerleave', () => { renderer.domElement.style.cursor = 'grab'; });
+    const pointerLeave = () => { renderer.domElement.style.cursor = 'grab'; };
+    renderer.domElement.addEventListener('pointerleave', pointerLeave);
 
     const resize = () => {
       const width = Math.max(1, host.clientWidth);
@@ -221,6 +211,8 @@ export default function HeartScene({ results, activeVessel, onVesselSelect }) {
       cancelAnimationFrame(animationFrame);
       observer.disconnect();
       controls.dispose();
+      renderer.domElement.removeEventListener('webglcontextlost', contextLost);
+      renderer.domElement.removeEventListener('pointerleave', pointerLeave);
       renderer.domElement.removeEventListener('pointerdown', pointerDown);
       renderer.domElement.removeEventListener('pointerup', pointerUp);
       renderer.domElement.removeEventListener('pointermove', pointerMove);
@@ -235,13 +227,12 @@ export default function HeartScene({ results, activeVessel, onVesselSelect }) {
       if (renderer.domElement.parentNode === host) host.removeChild(renderer.domElement);
       meshRef.current = {};
     };
-  }, []);
+  }, [webglFailed]);
 
   useEffect(() => {
     const { vesselMeshes = {}, branchMeshes = {} } = meshRef.current;
-    for (const id of VESSEL_IDS) {
-      const score = scoreFor(results, id);
-      const color = scoreColor(score);
+    for (const { id, score } of vesselCards(results)) {
+      const color = new THREE.Color(scoreColor(score, palette));
       const selected = activeVessel === id;
       const targets = [vesselMeshes[id], ...(branchMeshes[id] || [])].filter(Boolean);
       targets.forEach((mesh) => {
@@ -251,7 +242,27 @@ export default function HeartScene({ results, activeVessel, onVesselSelect }) {
         mesh.material.needsUpdate = true;
       });
     }
-  }, [results, activeVessel]);
+  }, [results, activeVessel, palette, webglFailed]);
 
-  return <div className="heart-scene" ref={hostRef} />;
+  return <div className="heart-scene" data-view={webglFailed ? 'fallback' : 'webgl'}>
+    {!webglFailed && <div className="heart-webgl" ref={hostRef} />}
+    {webglFailed && <div className="heart-fallback">
+      <p role="status">3D unavailable — showing a selectable 2D schematic.</p>
+      <svg viewBox="0 0 320 280" aria-hidden="true" focusable="false">
+        <path d="M160 56 C110 4 30 34 34 115 C38 183 118 231 160 258 C202 231 282 183 286 115 C290 34 210 4 160 56Z" fill="#f5e4e9" stroke="#82465a" strokeWidth="2" />
+        {cards.map(card => <g key={card.id}>
+          <path d={FALLBACK_PATHS[card.id]} fill="none" stroke="#18343e" strokeWidth={activeVessel === card.id ? 17 : 12} strokeLinecap="round" />
+          <path d={FALLBACK_PATHS[card.id]} fill="none" stroke={scoreColor(card.score, palette)} strokeWidth="8" strokeLinecap="round" />
+        </g>)}
+        <g fill="#18343e" fontSize="15" fontWeight="bold"><text x="170" y="228">LAD</text><text x="63" y="177">LCX</text><text x="235" y="210">RCA</text></g>
+      </svg>
+    </div>}
+    <div className="scene-vessel-badges" role="group" aria-label="Select schematic vessel; whole-vessel scores, not clinical probabilities">
+      {cards.map(card => <button type="button" key={card.id} aria-pressed={activeVessel === card.id}
+        onClick={() => onVesselSelect?.(card.id)}>
+        <span className="scene-vessel-swatch" style={{ background: scoreColor(card.score, palette) }} aria-hidden="true" />
+        <strong>{card.label}</strong><span>{card.text}</span>{activeVessel === card.id && <span className="scene-selected">Selected</span>}
+      </button>)}
+    </div>
+  </div>;
 }

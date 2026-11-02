@@ -199,3 +199,34 @@ same research-only limitations described above.
 See [the product blueprint](docs/product-blueprint.md) for a research-to-clinical roadmap and safety gates.
 
 For the selected primary-prevention direction, see [the 10-year prevention research plan](docs/prevention-risk-plan.md).
+
+
+### Accessible coronary schematic
+
+The map defaults to a Viridis-inspired sequential palette. The **Vessel palette**
+selector also offers the original teal–amber–rose ramp; the map and its legend
+update together. LAD, LCX and RCA always have keyboard-operable numeric badges
+on a 0–1 score scale (not clinical probabilities). Selection is indicated by text,
+a border and `aria-pressed`, not color alone; missing/invalid scores show
+**Unavailable**, never zero.
+
+If WebGL creation fails or the context is lost, the viewer switches to a generic
+2D SVG schematic with the same vessel buttons, scores, palette and selected
+territory. No patient-specific anatomy or lesion location is implied. The
+fallback stays active until the viewer is remounted/reloaded.
+
+Pure display-helper regressions run with `node --test tests/*.test.js`.
+For an optional Chromium integration check, start `npm run dev`, then in another
+terminal run:
+
+```sh
+npm install --no-save --package-lock=false playwright
+npx playwright install --with-deps chromium
+node scripts/check-heart-scene.mjs
+```
+
+Set `CARDIOLENS_TEST_URL` if not using the default local Vite URL. This check
+forces WebGL creation failure and simulated context loss, exercises keyboard and
+mobile vessel selection, and verifies the palette/legend toggle without page
+errors. Software WebGL is used; this is not a physical GPU or assistive-technology
+audit, nor a guarantee for every type of color-vision deficiency.
