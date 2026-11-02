@@ -69,3 +69,100 @@ def test_binary_label_decoder_fails_closed_on_unknown_labels():
     assert parse_binary_label("Stenotic", "LAD") == 1
     with pytest.raises(ValueError):
         parse_binary_label("maybe", "CAD")
+
+
+def test_frontend_backend_schema_parity():
+    """Read the actual ESM export; fail, rather than skip, if either schema drifts."""
+    import json
+    from pathlib import Path
+    import subprocess
+    from app.main import (
+        BOOLEAN_FEATURES, FORBIDDEN_FEATURES, INTEGER_FEATURES,
+        NUMERIC_RANGES, SEX_CATEGORIES, VHD_CATEGORIES,
+    )
+
+    root = Path(__file__).resolve().parents[2]
+    output = subprocess.run(
+        ["node", "--input-type=module", "-e",
+         "import {VALIDATION_SCHEMA} from './src/validation.js';"
+         "console.log(JSON.stringify(VALIDATION_SCHEMA));"],
+        cwd=root, check=True, capture_output=True, text=True, timeout=15,
+    )
+    frontend = json.loads(output.stdout)
+    expected = {
+        "numeric_ranges": {name: list(bounds) for name, bounds in NUMERIC_RANGES.items()},
+        "boolean_features": sorted(BOOLEAN_FEATURES),
+        "sex": sorted(SEX_CATEGORIES), "vhd": sorted(VHD_CATEGORIES),
+        "integer_features": sorted(INTEGER_FEATURES),
+        "forbidden_features": sorted(FORBIDDEN_FEATURES),
+    }
+    assert {key: sorted(value) if isinstance(value, list) else value
+            for key, value in frontend.items()} == expected
+
+
+@pytest.mark.parametrize("updates", [
+    {"smoking": True, "ex_smoker": True},
+    {"region_rwma": 0.5}, {"region_rwma": 1.5}, {"region_rwma": 3.9},
+    {"sex": "Other / not recorded"}, {"vhd": "unsupported"},
+])
+def test_both_backend_modes_reject_invalid_coding(updates):
+    # Minimal bundle schema ensures validation runs without an optional model artifact.
+    with pytest.raises(ValueError):
+        _checked_demo_features({**DEMO, **updates})
+    with pytest.raises(ValueError):
+        _bundle_predict({**DEMO, **updates}, {"feature_columns": list(DEMO)})
+
+
+@pytest.mark.parametrize("key", ["CAD", "Cath", "LAD", "LCX", "RCA", " c-A_d "])
+def test_both_backend_modes_reject_diagnostic_leakage(key):
+    raw = {**DEMO, key: False}
+    with pytest.raises(ValueError, match="Outcome/diagnostic"):
+        _checked_demo_features(raw)
+    assert _bundle_predict(raw, {"feature_columns": list(DEMO)})["status"] == "not_estimable"
+
+
+def test_demo_accepts_all_canonical_categories_and_numeric_boundaries():
+    from app.main import BOOLEAN_FEATURES, NUMERIC_RANGES, SEX_CATEGORIES, VHD_CATEGORIES
+
+    for name, bounds in NUMERIC_RANGES.items():
+        for value in bounds:
+            assert _checked_demo_features({**DEMO, name: value})[name] == value
+        for value in [bounds[0] - 1, bounds[1] + 1, float("nan"), float("inf")]:
+            with pytest.raises(ValueError):
+                _checked_demo_features({**DEMO, name: value})
+            with pytest.raises(ValueError):
+                _bundle_predict({**DEMO, name: value}, {"feature_columns": list(DEMO)})
+    for name, values in [("sex", SEX_CATEGORIES), ("vhd", VHD_CATEGORIES)]:
+        for value in values:
+            assert _checked_demo_features({**DEMO, name: value})[name] == value
+    for name in BOOLEAN_FEATURES:
+        for value in [True, False]:
+            assert _checked_demo_features({**DEMO, name: value})[name] is value
+
+
+@pytest.mark.parametrize("lvh,label", [(False, "Absent"), (True, "Present")])
+def test_lvh_model_encoding_and_explanation_are_preserved(lvh, label):
+    from types import SimpleNamespace
+    import numpy as np
+
+    class Pipeline:
+        named_steps = {
+            "prep": SimpleNamespace(
+                transform=lambda frame: np.array([[1.0]]),
+                get_feature_names_out=lambda: ["cat__lvh_N"],
+            ),
+            "clf": SimpleNamespace(coef_=np.array([[0.1]])),
+        }
+
+        def predict_proba(self, frame):
+            assert frame.iloc[0]["lvh"] == ("Y" if lvh else "N")
+            return np.array([[0.6, 0.4]])
+
+    pipeline = Pipeline()
+    bundle = {
+        "feature_columns": list(DEMO),
+        "models": {name: pipeline for name in ["cad_present", "lad", "lcx", "rca"]},
+    }
+    result = _bundle_predict({**DEMO, "lvh": lvh}, bundle)
+    assert result["status"] == "ok"
+    assert result["explanation"][0]["value"] == label

@@ -145,7 +145,7 @@ From the project root, after the backend virtual environment and Node dependenci
 npm run build
 ```
 
-The backend tests cover input validation, synthetic-mode behavior, label handling, and exclusion of outcome/diagnostic fields from predictors.
+The backend tests cover input validation, synthetic-mode behavior, label handling, and exclusion of outcome/diagnostic fields from predictors. They also execute the machine-readable `VALIDATION_SCHEMA` export from `src/validation.js` using Node.js (22 in CI), and compare numeric bounds, boolean fields, canonical sex/VHD categories, integer fields, and diagnostic exclusions against the backend constants. Keep Node on `PATH` when running pytest; schema drift fails the test rather than being skipped. Backend alias/coercion support is retained; this contract covers canonical form bounds/categories, not identical raw input parsing.
 
 ## Optional: retrain locally
 
