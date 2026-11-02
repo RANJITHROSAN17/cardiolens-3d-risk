@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { validateCase } from './validation.js';
 import HeartScene from './HeartScene.jsx';
+import { paletteGradient } from './heart-visualization.js';
 import PreventionWorkspace from './PreventionWorkspace.jsx';
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '');
@@ -220,6 +221,8 @@ function App() {
   const [prediction, setPrediction] = useState(null);
   const [modelInfo, setModelInfo] = useState(null);
   const [activeVessel, setActiveVessel] = useState('lad');
+  const [vesselPalette, setVesselPalette] = useState('viridis');
+  const [sceneMode, setSceneMode] = useState('webgl');
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [apiError, setApiError] = useState('');
@@ -488,17 +491,23 @@ function App() {
             <div className="panel viewer-panel">
               <div className="panel-heading viewer-heading">
                 <div className="heading-icon lilac"><Icon name="activity" /></div>
-                <div><h2>3D coronary map</h2><p>Schematic anterior view · generic anatomy</p></div>
-                <div className="view-controls"><span className="drag-hint"><Icon name="rotate" size={14} /> Drag to rotate</span></div>
+                <div><h2>{sceneMode === 'fallback' ? '2D coronary map' : '3D coronary map'}</h2><p>Schematic anterior view · generic anatomy</p></div>
+                <div className="view-controls"><span className="drag-hint">{sceneMode === 'fallback' ? 'Use vessel buttons to select' : <><Icon name="rotate" size={14} /> Drag to rotate</>}</span></div>
               </div>
+              <label className="palette-control">Vessel palette
+                <select value={vesselPalette} onChange={event => setVesselPalette(event.target.value)}>
+                  <option value="viridis">Colorblind-safe (Viridis-inspired)</option>
+                  <option value="classic">Original teal–amber–rose</option>
+                </select>
+              </label>
               <div className="viewer-stage">
                 <div className="viewer-sheen" />
                 <div className="anatomy-badge"><span className="pulse-dot" />ILLUSTRATIVE ANATOMY</div>
                 <div className="view-tag">ANTERIOR VIEW <span>·</span> NOT PATIENT-SPECIFIC</div>
-                <HeartScene results={prediction?.results} activeVessel={activeVessel} onVesselSelect={setActiveVessel} />
+                <HeartScene results={prediction?.results} activeVessel={activeVessel} onVesselSelect={setActiveVessel} palette={vesselPalette} onModeChange={setSceneMode} />
                 <div className="map-legend">
                   <div className="legend-title">WHOLE-VESSEL SCORE · NOT LESION MAP</div>
-                  <div className="legend-row"><span>Lower</span><span className="legend-gradient" /><span>Higher</span></div>
+                  <div className="legend-row"><span>Lower</span><span className="legend-gradient" style={{ background: paletteGradient(vesselPalette) }} /><span>Higher</span></div>
                 </div>
                 <div className="scene-compass"><span className="compass-n">A</span><span className="compass-line" /><span className="compass-s">P</span></div>
               </div>
