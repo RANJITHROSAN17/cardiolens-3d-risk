@@ -6,6 +6,14 @@ CardioLens 3D pairs a browser-based 3D coronary schematic with a fixed, locally 
 
 > **⚠️ Demo/research use only — not for patient care.** This prototype has not been independently or prospectively validated, is not calibrated, and must not be used for diagnosis, screening, triage, treatment, or clinical decisions. Its scores are **not clinical probabilities or future-event risk estimates**. The 3D model is schematic, not patient-specific; whole-vessel coloring does not identify a lesion. Never enter names, identifiers, or protected health information (PHI).
 
+## Choose a safe first evaluation
+
+- **Understand the model first:** read the [model card](docs/model-card.md), including internal-only validation and uncalibrated outputs.
+- **Try the complete local prototype:** follow [Run locally](#run-locally), load a synthetic preset and inspect its model metadata. Never enter real patient details.
+- **Check the API before troubleshooting the UI:** with the local backend running, open `http://127.0.0.1:8000/api/health` and `http://127.0.0.1:8000/api/model-info`, then the interactive `/docs` page.
+
+A static frontend or screenshot alone does not demonstrate a functioning prediction API. Success means a synthetic example passes validation and shows its research-mode metadata—not that the model has identified a patient’s disease or future risk.
+
 ## At a glance
 
 | | Current prototype |
@@ -176,6 +184,10 @@ Independent validation on representative data, calibration assessment, clinicall
 - [Dataset attribution and license](DATA_ATTRIBUTION.md)
 - [Model card](docs/model-card.md)
 - [Project specification](docs/project-spec.md)
+
+## Maintainer
+
+**[Ranjith Rosan](https://github.com/RANJITHROSAN17)** maintains CardioLens 3D, this research-only coronary visualisation prototype. Source-dataset attribution is documented in [DATA_ATTRIBUTION.md](DATA_ATTRIBUTION.md); maintainer credit does not imply clinical validation.
 
 ## License
 
