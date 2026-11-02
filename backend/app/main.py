@@ -25,13 +25,16 @@ BUNDLE_PATH = Path(os.getenv("CARDIO_MODEL_BUNDLE", str(DEFAULT_BUNDLE)))
 FORBIDDEN_FEATURES = {"cad", "lad", "lcx", "rca", "cath"}
 BOOLEAN_FEATURES = {
     "diabetes", "hypertension", "smoking", "ex_smoker", "family_history",
-    "typical_chest_pain", "st_elevation", "st_depression", "t_inversion",
+    "typical_chest_pain", "st_elevation", "st_depression", "t_inversion", "lvh",
 }
 NUMERIC_RANGES = {
     "age": (18, 110), "bmi": (10, 80), "systolic_bp": (70, 250),
     "pulse_rate": (30, 220), "fbs": (30, 700), "ldl": (10, 500),
     "hdl": (5, 200), "tg": (20, 2000), "ef_tte": (5, 90), "region_rwma": (0, 4),
 }
+SEX_CATEGORIES = {"Female", "Male"}
+VHD_CATEGORIES = {"N", "mild", "Moderate", "Severe"}
+INTEGER_FEATURES = {"region_rwma"}
 FEATURE_LABELS = {
     "age": ("Age", "years"), "sex": ("Sex", ""), "bmi": ("BMI", "kg/m²"),
     "diabetes": ("Diabetes", ""), "hypertension": ("Hypertension", ""),
@@ -80,6 +83,8 @@ def _as_bool(value: Any, name: str) -> bool:
 
 
 def _checked_demo_features(raw: dict[str, Any]) -> dict[str, Any]:
+    if any(_norm_key(key) in FORBIDDEN_FEATURES for key in raw):
+        raise ValueError("Outcome/diagnostic fields are not accepted as predictors.")
     aliases = {
         "age": ["age"],
         "sex": ["sex", "gender"],
@@ -123,16 +128,19 @@ def _checked_demo_features(raw: dict[str, Any]) -> dict[str, Any]:
             raise ValueError(f"{name} must be numeric") from None
         if not low <= value <= high:
             raise ValueError(f"{name} must be between {low} and {high} for this demo form")
-        result[name] = int(value) if name == "region_rwma" else value
+        if name in INTEGER_FEATURES and not value.is_integer():
+            raise ValueError(f"{name} must be an integer")
+        result[name] = int(value) if name in INTEGER_FEATURES else value
 
     result["sex"] = str(result["sex"])
-    for name in BOOLEAN_FEATURES | {"lvh"}:
+    if result["sex"] not in SEX_CATEGORIES:
+        raise ValueError("sex category is not represented in the source cohort; this model cannot estimate it")
+    for name in BOOLEAN_FEATURES:
         result[name] = _as_bool(result[name], name)
     if result["smoking"] and result["ex_smoker"]:
         raise ValueError("smoking and ex_smoker cannot both be true for this source-cohort encoding")
     vhd = str(result["vhd"]).strip()
-    allowed_vhd = {"N", "mild", "Moderate", "Severe"}
-    match = next((option for option in allowed_vhd if option.lower() == vhd.lower()), None)
+    match = next((option for option in VHD_CATEGORIES if option.lower() == vhd.lower()), None)
     if match is None:
         raise ValueError("vhd must be one of N, mild, Moderate, Severe")
     result["vhd"] = match
@@ -229,7 +237,7 @@ def _linear_explanations(pipeline, frame: pd.DataFrame) -> list[dict[str, Any]]:
             else:
                 label, unit = FEATURE_LABELS[key]
                 value = frame.iloc[0][key]
-                if isinstance(value, (bool, np.bool_)) or key in BOOLEAN_FEATURES:
+                if isinstance(value, (bool, np.bool_)) or key in BOOLEAN_FEATURES - {"lvh"}:
                     value = "Yes" if bool(value) else "No"
                 elif key == "lvh":
                     value = "Present" if str(value).upper() == "Y" else "Absent"
@@ -277,9 +285,11 @@ def _bundle_predict(raw_features: dict[str, Any], bundle: dict[str, Any]) -> dic
             raise ValueError(f"{key} must be numeric") from None
         if not low <= value <= high:
             raise ValueError(f"{key} must be between {low} and {high}")
-        row[key] = int(value) if key == "region_rwma" else value
+        if key in INTEGER_FEATURES and not value.is_integer():
+            raise ValueError(f"{key} must be an integer")
+        row[key] = int(value) if key in INTEGER_FEATURES else value
     # Training data contain numeric 0/1 flags, while the form uses real booleans.
-    for key in BOOLEAN_FEATURES:
+    for key in BOOLEAN_FEATURES - {"lvh"}:
         if key in row:
             row[key] = int(_as_bool(row[key], key))
     if row.get("smoking") == 1 and row.get("ex_smoker") == 1:
@@ -289,12 +299,11 @@ def _bundle_predict(raw_features: dict[str, Any], bundle: dict[str, Any]) -> dic
     if "sex" in row:
         token = str(row["sex"]).strip().lower()
         row["sex"] = "Female" if token in {"female", "fmale", "f"} else ("Male" if token in {"male", "m"} else str(row["sex"]))
-        if row["sex"] not in {"Female", "Male"}:
+        if row["sex"] not in SEX_CATEGORIES:
             raise ValueError("sex category is not represented in the source cohort; this model cannot estimate it")
     if "vhd" in row:
         vhd = str(row["vhd"]).strip()
-        allowed_vhd = {"N", "mild", "Moderate", "Severe"}
-        match = next((option for option in allowed_vhd if option.lower() == vhd.lower()), None)
+        match = next((option for option in VHD_CATEGORIES if option.lower() == vhd.lower()), None)
         if match is None:
             raise ValueError("vhd must be one of N, mild, Moderate, Severe")
         row["vhd"] = match
