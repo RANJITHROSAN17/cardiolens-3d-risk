@@ -184,6 +184,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-v
 .future-risk-box strong { display: block; margin-top: 4px; color: #71838b; font-size: 9px; font-weight: 700; }
 .future-risk-box p { margin: 4px 0 0; color: #96a4a9; font-size: 7.8px; line-height: 1.4; }
 .lock-mark { margin-left: auto; color: #aab7bb; font-size: 14px; }
+.report-download-button { width: 100%; min-height: 32px; display: flex; align-items: center; justify-content: center; gap: 7px; margin-top: 10px; border: 1px solid #b8dcd7; border-radius: 8px; background: #eef8f6; color: #17756f; font-size: 8.5px; font-weight: 760; cursor: pointer; transition: background .15s, border-color .15s, transform .15s; }
+.report-download-button:hover:not(:disabled) { background: #e2f3ef; border-color: #93cbc4; transform: translateY(-1px); }
+.report-download-button:disabled { cursor: not-allowed; opacity: .52; }
+.report-download-note { margin: 6px 0 0; color: #93a5aa; text-align: center; font-size: 7.3px; line-height: 1.4; }
 .not-estimable { margin: 17px 0; padding: 11px; border: 1px solid #f4e6ca; border-radius: 9px; background: #fffaf0; }
 .not-estimable strong { color: #8d652f; font-size: 13px; }
 .not-estimable p { color: #7c6b50; font-size: 9px; line-height: 1.4; }

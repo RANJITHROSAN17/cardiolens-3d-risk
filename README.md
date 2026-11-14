@@ -129,11 +129,14 @@ When the backend is running, interactive documentation is available at **http://
 | Method | Endpoint | Purpose |
 |---|---|---|
 | `GET` | `/api/health` | Service status and active mode (`trained_research` or `synthetic_demo`) |
-| `GET` | `/api/model-info` | Model version, feature count, calibration status, and target metadata |
+| `GET` | `/api/model-info` | Model version, feature count, calibration status, bundle SHA-256, scikit-learn version, and target metadata |
 | `GET` | `/api/sample-case` | Synthetic example inputs; no real patient rows are served |
 | `POST` | `/api/predict` | Estimate the CAD and vessel-label scores for one case |
+| `POST` | `/api/report` | Download a deterministic, self-describing JSON research report for one validated synthetic case |
 
-The prediction request uses schema version `0.2` and a `features` object containing the complete feature set. Missing values are not silently imputed at request time; incomplete inputs return `not_estimable`. Outcome/diagnostic fields cannot be submitted as predictors. Future-event risk is always reported as unavailable.
+The prediction and report requests use schema version `0.2` and a `features` object containing the complete feature set. Missing values are not silently imputed at request time; incomplete inputs return `not_estimable`. Outcome/diagnostic fields cannot be submitted as predictors. Unexpected keys and identifier-named fields such as `name`, `patient_id`, `mrn`, `dob`, `email`, `phone`, and `address` are rejected by both the frontend validator and the backend. Future-event risk is always reported as unavailable.
+
+The reproducible report (`schema_version: 1.0`) records the active mode, model and calibration status, model-bundle SHA-256 and scikit-learn version for the trained research model, validated synthetic inputs, uncalibrated CAD/vessel head outputs, log-odds contributions, and the mandatory non-clinical disclaimer. It contains no timestamp or case identifier. In synthetic-demo mode the bundle hash and scikit-learn fields are explicitly null/not applicable because the fabricated demo formula is not the trained bundle.
 
 ## Tests and production build
 
