@@ -6,7 +6,7 @@ import pytest
 
 import app.main as main
 from app.main import BUNDLE, _bundle_predict, _checked_demo_features, _demo_predict
-from ml.train import find_targets, parse_binary_label, select_features
+from ml.train import calibration_summary, find_targets, parse_binary_label, repeated_cv, select_features
 
 
 DEMO = {
@@ -73,6 +73,101 @@ def test_binary_label_decoder_fails_closed_on_unknown_labels():
     assert parse_binary_label("Stenotic", "LAD") == 1
     with pytest.raises(ValueError):
         parse_binary_label("maybe", "CAD")
+
+
+def test_calibration_summary_reports_bounded_monotone_quantile_bins():
+    import numpy as np
+
+    probabilities = np.repeat([0.1, 0.3, 0.5, 0.7, 0.9], 20)
+    labels = np.concatenate([
+        np.concatenate([np.ones(int(fraction * 20), dtype=int), np.zeros(20 - int(fraction * 20), dtype=int)])
+        for fraction in [0.1, 0.3, 0.5, 0.7, 0.9]
+    ])
+
+    calibration = calibration_summary(labels, probabilities, n_bins=5)
+    bins = calibration["bins"]
+
+    assert calibration["status"] == "uncalibrated_research"
+    assert calibration["sample_count"] == calibration["prediction_count"] == 100
+    assert [row["count"] for row in bins] == [20, 20, 20, 20, 20]
+    assert sum(row["count"] for row in bins) == len(labels)
+    assert [row["mean_predicted_score"] for row in bins] == pytest.approx([0.1, 0.3, 0.5, 0.7, 0.9])
+    assert [row["observed_fraction"] for row in bins] == pytest.approx([0.1, 0.3, 0.5, 0.7, 0.9])
+    assert all(
+        left["mean_predicted_score"] <= right["mean_predicted_score"]
+        for left, right in zip(bins, bins[1:])
+    )
+    assert all(0.0 <= row["mean_predicted_score"] <= 1.0 for row in bins)
+    assert all(0.0 <= row["observed_fraction"] <= 1.0 for row in bins)
+    assert calibration["slope"] == pytest.approx(1.0, abs=1e-6)
+    assert calibration["intercept"] == pytest.approx(0.0, abs=1e-6)
+
+
+def test_calibration_summary_rejects_non_probability_scores():
+    import numpy as np
+
+    with pytest.raises(ValueError, match="finite probabilities"):
+        calibration_summary(np.array([0, 1]), np.array([0.2, 1.2]))
+
+
+def test_repeated_cv_calibration_uses_synthetic_stratified_frame_without_target_leakage():
+    import numpy as np
+
+    rng = np.random.default_rng(2026)
+    labels = np.tile([0, 1], 60)
+    signal = labels + rng.normal(0.0, 0.65, size=len(labels))
+    frame = pd.DataFrame({
+        "Age": 35.0 + 20.0 * labels + rng.normal(0.0, 3.0, size=len(labels)),
+        "Sex": np.where(np.arange(len(labels)) % 3, "Female", "Male"),
+        "BP": 105.0 + 25.0 * signal + rng.normal(0.0, 4.0, size=len(labels)),
+        "Cath": np.where(labels, "CAD", "Normal"),
+        "LAD": np.where(labels, "Stenotic", "Normal"),
+        "LCX": np.where(labels, "Stenotic", "Normal"),
+        "RCA": np.where(labels, "Stenotic", "Normal"),
+    })
+    targets = find_targets(frame)
+    feature_sources = select_features(frame, targets)
+
+    assert feature_sources == ["Age", "Sex", "BP"]
+    assert not {column.lower() for column in feature_sources} & {"cad", "cath", "lad", "lcx", "rca"}
+    assert not set(feature_sources) & set(targets.values())
+
+    result = repeated_cv(frame[feature_sources], labels)
+    calibration = result["calibration"]
+    bins = calibration["bins"]
+
+    assert result["class_counts"] == {"negative": 60, "positive": 60}
+    assert calibration["sample_count"] == 120
+    assert calibration["prediction_count"] == 600
+    assert sum(row["count"] for row in bins) == calibration["prediction_count"]
+    assert max(row["count"] for row in bins) - min(row["count"] for row in bins) <= 1
+    assert all(
+        left["mean_predicted_score"] <= right["mean_predicted_score"]
+        for left, right in zip(bins, bins[1:])
+    )
+    assert all(0.0 <= row["mean_predicted_score"] <= 1.0 for row in bins)
+    assert all(0.0 <= row["observed_fraction"] <= 1.0 for row in bins)
+    assert np.isfinite([calibration["slope"], calibration["intercept"]]).all()
+
+
+def test_metrics_artifact_records_calibration_for_all_targets():
+    root = Path(__file__).resolve().parents[2]
+    artifact = json.loads((root / "backend" / "artifacts" / "metrics.json").read_text(encoding="utf-8"))
+
+    assert set(artifact) == {"cad_present", "lad", "lcx", "rca"}
+    for target in artifact.values():
+        calibration = target["calibration"]
+        bins = calibration["bins"]
+        assert calibration["status"] == "uncalibrated_research"
+        assert calibration["binning"] == "quantile"
+        assert calibration["sample_count"] == 303
+        assert calibration["prediction_count"] == 303 * target["repeats"]
+        assert sum(row["count"] for row in bins) == calibration["prediction_count"]
+        assert all(
+            left["mean_predicted_score"] <= right["mean_predicted_score"]
+            for left, right in zip(bins, bins[1:])
+        )
+        assert all(0.0 <= row["observed_fraction"] <= 1.0 for row in bins)
 
 
 def test_frontend_backend_schema_parity():

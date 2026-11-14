@@ -20,7 +20,7 @@ The four independent logistic-regression heads estimate the source-cohort labels
 
 ## Model and evaluation
 
-Each target uses a scikit-learn pipeline: fold-fitted median/mode imputation, scaling of continuous fields, one-hot encoding of categorical fields, and class-weighted logistic regression (`C=0.5`). Evaluation is **fixed-model repeated stratified 5-fold internal CV** (five repeats; threshold 0.5); the table shows mean ± SD across folds, not confidence intervals. No hyperparameter tuning or post-hoc calibration was performed.
+Each target uses a scikit-learn pipeline: fold-fitted median/mode imputation, scaling of continuous fields, one-hot encoding of categorical fields, and class-weighted logistic regression (`C=0.5`). Evaluation is **fixed-model repeated stratified 5-fold internal CV** (five repeats; threshold 0.5); the table shows mean ± SD across folds, not confidence intervals. No hyperparameter tuning or post-hoc calibration was performed. The training script also pools each repeat's held-out scores to record descriptive calibration diagnostics for the **uncalibrated** model; those diagnostics do not change any score.
 
 | Target | Accuracy | Precision | Sensitivity | Specificity | F1 | ROC-AUC | PR-AUC | Brier |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
@@ -31,6 +31,25 @@ Each target uses a scikit-learn pipeline: fold-fitted median/mode imputation, sc
 
 Full per-fold details are in `backend/artifacts/metrics.json`; exact source/canonical mappings and the dataset hash are in `backend/artifacts/feature_manifest.json`.
 
+## Calibration diagnostics (uncalibrated scores)
+
+For every target, `metrics.json` records five pooled out-of-fold quantile bins (mean predicted score versus observed fraction), a calibration slope, and a calibration intercept. The bins contain 1,515 held-out predictions: each of the 303 source rows appears once in each of the five CV repeats. Repeats reuse the same rows, so they are not independent patients and the pooled values have no confidence interval here.
+
+The slope and intercept come from the descriptive logistic recalibration fit `logit(observed) ≈ intercept + slope × logit(score)`. Perfect agreement would have **intercept 0 and slope 1**, but neither value alone proves clinical calibration:
+
+- **Bins:** In a bin, observed fraction above the mean predicted score means the uncalibrated scores under-predicted that score range; observed fraction below the mean means they over-predicted it.
+- **Slope:** A slope below 1 means the score spread is too extreme (low scores tend to be too low and high scores too high, i.e. overconfident separation). A slope above 1 means the spread is too moderate (scores are not separated enough). Read the slope together with the bins rather than as a pass/fail cutoff.
+- **Intercept:** In this jointly fitted slope/intercept diagnostic, a positive intercept shifts observed log-odds upward relative to the scores (toward under-prediction, evaluated at a score of 0.5), while a negative intercept shifts them downward (toward over-prediction). Because the intercept is fitted jointly with the slope, it is not by itself a calibration-in-the-large estimate; use the bins to see where any mismatch occurs.
+
+| Target | Calibration slope | Calibration intercept |
+|---|---:|---:|
+| CAD (`Cath`) | 1.067 | 0.824 |
+| LAD | 0.880 | 0.331 |
+| LCX | 0.664 | -0.394 |
+| RCA | 0.654 | -0.463 |
+
+These are internal, repeated-CV diagnostics only. They do **not** recalibrate the model, establish clinical calibration, or make the outputs clinical probabilities. External calibration assessment on an independent, representative cohort is still required.
+
 ## Limitations and required next evidence
 
-Small, single-source cohort; likely spectrum and population shift; modest vessel-specific performance; one CAD/vessel-label inconsistency; no external or prospective validation; no calibration or clinically selected operating thresholds; no fairness analysis; no time-to-event outcomes; no patient-specific imaging/segment labels. Scores shown in the app are uncalibrated research model outputs, not calibrated clinical probabilities. Obtain independent, representative validation, calibration, clinical thresholds, human-factors review, privacy/security approval and regulatory determination before any clinical pilot or claim.
+Small, single-source cohort; likely spectrum and population shift; modest vessel-specific performance; one CAD/vessel-label inconsistency; no external or prospective validation; no post-hoc calibration, external calibration validation, or clinically selected operating thresholds; no fairness analysis; no time-to-event outcomes; no patient-specific imaging/segment labels. Scores shown in the app are uncalibrated research model outputs, not calibrated clinical probabilities. Obtain independent, representative validation, calibration, clinical thresholds, human-factors review, privacy/security approval and regulatory determination before any clinical pilot or claim.
