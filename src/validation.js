@@ -56,12 +56,14 @@ export function validateCase(features) {
 
   const errors = [];
   for (const key of Object.keys(features)) {
+    // Do not interpolate the raw key: an unexpected key can itself be
+    // accidental free text. Report only the fixed rejection category.
     if (isIdentifierField(key)) {
-      errors.push(`${key} is an identifier/PHI field and must not be entered`);
+      errors.push('identifier/PHI field is not accepted; do not enter names or identifiers');
     } else if (FORBIDDEN_FEATURES.includes(normalizeKey(key))) {
-      errors.push(`${key} is an outcome/diagnostic field, not a predictor`);
+      errors.push('outcome/diagnostic field is not a predictor');
     } else if (!FEATURE_FIELDS.includes(key)) {
-      errors.push(`${key} is not a supported input field`);
+      errors.push('unexpected input key is not a supported input field');
     }
   }
   for (const [name, [min, max]] of Object.entries(NUMERIC_RANGES)) {
