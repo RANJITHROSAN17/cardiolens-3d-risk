@@ -81,8 +81,8 @@ def test_frontend_backend_schema_parity():
     from pathlib import Path
     import subprocess
     from app.main import (
-        BOOLEAN_FEATURES, FORBIDDEN_FEATURES, INTEGER_FEATURES,
-        NUMERIC_RANGES, SEX_CATEGORIES, VHD_CATEGORIES,
+        BOOLEAN_FEATURES, FEATURE_FIELDS, FORBIDDEN_FEATURES, IDENTIFIER_FIELDS,
+        INTEGER_FEATURES, NUMERIC_RANGES, SEX_CATEGORIES, VHD_CATEGORIES,
     )
 
     root = Path(__file__).resolve().parents[2]
@@ -99,9 +99,16 @@ def test_frontend_backend_schema_parity():
         "sex": sorted(SEX_CATEGORIES), "vhd": sorted(VHD_CATEGORIES),
         "integer_features": sorted(INTEGER_FEATURES),
         "forbidden_features": sorted(FORBIDDEN_FEATURES),
+        "feature_fields": list(FEATURE_FIELDS),
+        "identifier_fields": list(IDENTIFIER_FIELDS),
     }
-    assert {key: sorted(value) if isinstance(value, list) else value
-            for key, value in frontend.items()} == expected
+    normalized_frontend = {
+        key: sorted(value)
+        if isinstance(value, list) and key not in {"feature_fields", "identifier_fields"}
+        else value
+        for key, value in frontend.items()
+    }
+    assert normalized_frontend == expected
 
 
 @pytest.mark.parametrize("updates", [
@@ -260,3 +267,174 @@ def test_frontend_static_cv_fallback_matches_metrics_artifact():
         assert exposed["threshold"] == source["threshold"]
         for metric in ("roc_auc", "pr_auc", "brier"):
             assert exposed[metric] == source["summary"][metric]
+
+
+@pytest.mark.parametrize("key", [
+    "name", "patient_id", "mrn", "dob", "email", "phone", "address",
+    "patientId", "patient-id", "date_of_birth", "e-mail", "phone_number",
+    "home_address", "medical_record_number",
+])
+def test_identifier_fields_are_rejected_by_both_backend_modes(key):
+    with pytest.raises(ValueError, match="Identifier/PHI"):
+        _checked_demo_features({**DEMO, key: "synthetic-value"})
+
+    rejected = _bundle_predict(
+        {**DEMO, key: "synthetic-value"}, {"feature_columns": list(DEMO)}
+    )
+    assert rejected["status"] == "not_estimable"
+    assert rejected["rejection_type"] == "identifier_fields"
+    assert rejected["rejected_fields"] == [key]
+
+
+def test_unexpected_fields_are_rejected_by_both_backend_modes():
+    with pytest.raises(ValueError, match="Unexpected input fields"):
+        _checked_demo_features({**DEMO, "unexpected_note": "synthetic-value"})
+
+    rejected = _bundle_predict(
+        {**DEMO, "unexpected_note": "synthetic-value"}, {"feature_columns": list(DEMO)}
+    )
+    assert rejected["status"] == "not_estimable"
+    assert rejected["rejection_type"] == "unexpected_fields"
+    assert rejected["rejected_fields"] == ["unexpected_note"]
+
+
+def test_prediction_request_rejects_unexpected_top_level_keys():
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        main.PredictionRequest(
+            schema_version="0.2", features=DEMO, patient_id="synthetic-id"
+        )
+
+
+def test_bundle_prediction_returns_human_readable_validated_inputs():
+    from types import SimpleNamespace
+    import numpy as np
+
+    class Pipeline:
+        named_steps = {
+            "prep": SimpleNamespace(
+                transform=lambda frame: np.array([[1.0]]),
+                get_feature_names_out=lambda: ["cat__lvh_N"],
+            ),
+            "clf": SimpleNamespace(coef_=np.array([[0.1]])),
+        }
+
+        def predict_proba(self, frame):
+            return np.array([[0.6, 0.4]])
+
+    pipeline = Pipeline()
+    bundle = {
+        "feature_columns": list(DEMO),
+        "models": {name: pipeline for name in ["cad_present", "lad", "lcx", "rca"]},
+        "metadata": {"model_id": "fake-bundle", "version": "test"},
+    }
+    result = _bundle_predict({**DEMO, "age": "58", "lvh": True}, bundle)
+
+    assert result["status"] == "ok"
+    assert result["validated_inputs"] == {**DEMO, "age": 58.0, "lvh": True}
+
+
+def test_research_report_is_deterministic_and_self_describing_for_trained_model():
+    if BUNDLE is None:
+        pytest.skip("optional model bundle is not installed")
+    import hashlib
+    import sklearn
+
+    prediction = _bundle_predict(DEMO, BUNDLE)
+    report = main.build_research_report(prediction["validated_inputs"], prediction)
+    second_report = main.build_research_report(prediction["validated_inputs"], prediction)
+
+    assert report == second_report
+    assert json.dumps(report, sort_keys=True) == json.dumps(second_report, sort_keys=True)
+    assert list(report) == [
+        "report_type", "schema_version", "mode", "model", "inputs", "head_outputs",
+        "log_odds_contributions", "contribution_basis", "future_risk", "disclaimer", "limitations",
+    ]
+    assert report["schema_version"] == main.REPORT_SCHEMA_VERSION == "1.0"
+    assert report["mode"] == "trained_research"
+    assert report["model"]["model_bundle_sha256"] == hashlib.sha256(
+        main.BUNDLE_PATH.read_bytes()
+    ).hexdigest()
+    assert report["model"]["scikit_learn_version"] == sklearn.__version__ == "1.6.1"
+    assert report["inputs"] == {
+        "provenance": "validated_synthetic_inputs",
+        "contains_identifiers": False,
+        "features": prediction["validated_inputs"],
+    }
+    assert list(report["head_outputs"]) == ["cad_present", "lad", "lcx", "rca"]
+    assert report["head_outputs"]["cad_present"]["score"] == prediction["results"]["cad_present"]["score"]
+    assert report["head_outputs"]["rca"]["score"] == prediction["results"]["vessels"]["rca"]["score"]
+    assert report["log_odds_contributions"] == prediction["explanation"]
+    assert report["disclaimer"] == main.NON_CLINICAL_DISCLAIMER
+    assert "not clinical probabilities" in report["disclaimer"]
+    assert "patient_id" not in json.dumps(report)
+    assert main.research_report_filename(report) == "cardiolens-research-report-v1.0-trained_research.json"
+
+
+def test_research_report_is_deterministic_and_unbundled_for_synthetic_demo():
+    checked = _checked_demo_features(DEMO)
+    prediction = _demo_predict(checked)
+
+    report = main.build_research_report(checked, prediction)
+    second_report = main.build_research_report(checked, prediction)
+
+    assert report == second_report
+    assert report["mode"] == "synthetic_demo"
+    assert report["model"]["model_bundle_sha256"] is None
+    assert report["model"]["model_bundle_status"] == "not_applicable_synthetic_demo"
+    assert report["model"]["scikit_learn_version"] is None
+    assert report["inputs"]["features"] == checked
+    assert report["head_outputs"]["lad"]["estimate_type"] == "synthetic_demo_score"
+    assert report["disclaimer"] == main.NON_CLINICAL_DISCLAIMER
+
+
+def test_report_endpoint_downloads_json_and_refuses_identifier_fields():
+    if BUNDLE is None:
+        pytest.skip("optional model bundle is not installed")
+
+    response = main.report(main.PredictionRequest(schema_version="0.2", features=DEMO))
+    payload = json.loads(response.body)
+
+    assert response.status_code == 200
+    assert response.headers["content-disposition"].startswith("attachment; filename=")
+    assert payload["mode"] == "trained_research"
+    assert payload["model"]["model_bundle_sha256"]
+
+    refused = main.report(
+        main.PredictionRequest(schema_version="0.2", features={**DEMO, "email": "person@example.invalid"})
+    )
+    assert refused.status_code == 422
+    assert json.loads(refused.body)["status"] == "invalid_input"
+    assert "head_outputs" not in refused.body.decode()
+
+
+def test_model_info_records_bundle_hash_and_scikit_learn_version(monkeypatch):
+    import hashlib
+    import sklearn
+
+    monkeypatch.setattr(main, "BUNDLE", _trained_model_info_bundle())
+    info = main.model_info()
+
+    assert info["model_bundle_sha256"] == hashlib.sha256(main.BUNDLE_PATH.read_bytes()).hexdigest()
+    assert info["model_bundle_status"] == "available"
+    assert info["scikit_learn_version"] == sklearn.__version__ == "1.6.1"
+
+
+def test_frontend_report_constants_match_backend():
+    import subprocess
+
+    root = Path(__file__).resolve().parents[2]
+    output = subprocess.run(
+        ["node", "--input-type=module", "-e",
+         "import {NON_CLINICAL_DISCLAIMER, REPORT_SCHEMA_VERSION, REPORT_TYPE} from './src/research-report.js';"
+         "console.log(JSON.stringify({NON_CLINICAL_DISCLAIMER, REPORT_SCHEMA_VERSION, REPORT_TYPE}));"],
+        cwd=root, check=True, capture_output=True, text=True, timeout=15,
+    )
+    frontend = json.loads(output.stdout)
+
+    assert frontend == {
+        "NON_CLINICAL_DISCLAIMER": main.NON_CLINICAL_DISCLAIMER,
+        "REPORT_SCHEMA_VERSION": main.REPORT_SCHEMA_VERSION,
+        "REPORT_TYPE": main.REPORT_TYPE,
+    }

@@ -6,6 +6,7 @@ is clinically validated or for patient care.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import os
@@ -16,9 +17,10 @@ from typing import Any
 import joblib
 import numpy as np
 import pandas as pd
+import sklearn
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 APP_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_BUNDLE = APP_ROOT / "artifacts" / "model_bundle.joblib"
@@ -33,6 +35,44 @@ CV_INTERPRETATION = (
     "patient-level confidence interval, prediction interval, or clinical probability."
 )
 FORBIDDEN_FEATURES = {"cad", "lad", "lcx", "rca", "cath"}
+FEATURE_FIELDS = (
+    "age", "sex", "bmi", "diabetes", "hypertension", "smoking", "ex_smoker",
+    "family_history", "systolic_bp", "pulse_rate", "typical_chest_pain",
+    "st_elevation", "st_depression", "t_inversion", "lvh", "fbs", "tg",
+    "ldl", "hdl", "ef_tte", "region_rwma", "vhd",
+)
+IDENTIFIER_FIELDS = ("name", "patient_id", "mrn", "dob", "email", "phone", "address")
+REPORT_SCHEMA_VERSION = "1.0"
+REPORT_TYPE = "cardiolens_research_report"
+NON_CLINICAL_DISCLAIMER = (
+    "Research-only report based on synthetic demo inputs. Scores are uncalibrated "
+    "model outputs, not clinical probabilities, diagnoses, or treatment guidance. "
+    "Do not use for patient care."
+)
+DEMO_FEATURE_ALIASES = {
+    "age": ["age"],
+    "sex": ["sex", "gender"],
+    "bmi": ["bmi"],
+    "systolic_bp": ["systolic_bp", "sbp", "bp", "blood pressure"],
+    "pulse_rate": ["pulse_rate", "pulse", "pr", "heart_rate"],
+    "smoking": ["smoking", "current_smoker", "current smoker", "smoker"],
+    "ex_smoker": ["ex_smoker", "ex-smoker", "former smoker"],
+    "diabetes": ["diabetes", "dm"],
+    "hypertension": ["hypertension", "htn"],
+    "family_history": ["family_history", "fh", "family history"],
+    "typical_chest_pain": ["typical_chest_pain", "typical chest pain"],
+    "st_elevation": ["st_elevation", "st elevation"],
+    "st_depression": ["st_depression", "st depression"],
+    "t_inversion": ["t_inversion", "t inversion", "tinversion"],
+    "lvh": ["lvh"],
+    "fbs": ["fbs", "fasting blood sugar"],
+    "ldl": ["ldl"],
+    "hdl": ["hdl"],
+    "tg": ["tg", "triglycerides"],
+    "ef_tte": ["ef_tte", "ef-tte", "ejection fraction"],
+    "region_rwma": ["region_rwma", "region rwma", "rwma source code"],
+    "vhd": ["vhd"],
+}
 BOOLEAN_FEATURES = {
     "diabetes", "hypertension", "smoking", "ex_smoker", "family_history",
     "typical_chest_pain", "st_elevation", "st_depression", "t_inversion", "lvh",
@@ -66,12 +106,95 @@ app = FastAPI(
 
 
 class PredictionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     schema_version: str = Field(default="0.2")
     features: dict[str, Any]
 
 
 def _norm_key(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", str(value).strip().lower())
+
+
+_IDENTIFIER_NORMALIZED_KEYS = {_norm_key(field) for field in IDENTIFIER_FIELDS} | {
+    "fullname", "patientname", "dateofbirth", "phonenumber", "telephonenumber",
+    "mobilenumber", "emailaddress", "homeaddress", "postaladdress",
+    "streetaddress", "medicalrecordnumber",
+}
+
+
+def _is_identifier_key(value: Any) -> bool:
+    normalized = _norm_key(value)
+    return bool(
+        normalized in _IDENTIFIER_NORMALIZED_KEYS
+        or normalized.endswith("name")
+        or normalized.startswith("patient")
+        or "email" in normalized
+        or "phone" in normalized
+        or "telephone" in normalized
+        or "mobile" in normalized
+        or "address" in normalized
+        or "birth" in normalized
+        or "medicalrecord" in normalized
+    )
+
+
+def _feature_key_rejection(
+    raw: dict[str, Any], allowed_normalized_keys: set[str]
+) -> dict[str, Any] | None:
+    """Return a fail-closed rejection for identifier, diagnostic, or unknown keys."""
+    if not isinstance(raw, dict):
+        return {
+            "status": "not_estimable",
+            "reason": "Input features must be an object of validated synthetic fields.",
+            "rejection_type": "invalid_features",
+            "rejected_fields": [],
+        }
+
+    identifier_fields = [str(key) for key in raw if _is_identifier_key(key)]
+    if identifier_fields:
+        return {
+            "status": "not_estimable",
+            "reason": (
+                "Identifier/PHI fields are not accepted: "
+                + ", ".join(identifier_fields)
+                + ". Do not submit names or identifiers."
+            ),
+            "rejection_type": "identifier_fields",
+            "rejected_fields": identifier_fields,
+        }
+
+    forbidden_fields = [str(key) for key in raw if _norm_key(key) in FORBIDDEN_FEATURES]
+    if forbidden_fields:
+        return {
+            "status": "not_estimable",
+            "reason": "Outcome/diagnostic fields are not accepted as predictors.",
+            "rejection_type": "forbidden_features",
+            "forbidden_fields": forbidden_fields,
+            "rejected_fields": forbidden_fields,
+        }
+
+    unexpected_fields = [
+        str(key) for key in raw if _norm_key(key) not in allowed_normalized_keys
+    ]
+    if unexpected_fields:
+        return {
+            "status": "not_estimable",
+            "reason": (
+                "Unexpected input fields are not accepted: "
+                + ", ".join(unexpected_fields)
+                + ". Only validated synthetic model fields may be submitted."
+            ),
+            "rejection_type": "unexpected_fields",
+            "rejected_fields": unexpected_fields,
+        }
+    return None
+
+
+def _validate_feature_keys(raw: dict[str, Any], allowed_normalized_keys: set[str]) -> None:
+    rejection = _feature_key_rejection(raw, allowed_normalized_keys)
+    if rejection is not None:
+        raise ValueError(str(rejection["reason"]))
 
 
 def _sigmoid(value: float) -> float:
@@ -93,32 +216,13 @@ def _as_bool(value: Any, name: str) -> bool:
 
 
 def _checked_demo_features(raw: dict[str, Any]) -> dict[str, Any]:
-    if any(_norm_key(key) in FORBIDDEN_FEATURES for key in raw):
-        raise ValueError("Outcome/diagnostic fields are not accepted as predictors.")
-    aliases = {
-        "age": ["age"],
-        "sex": ["sex", "gender"],
-        "bmi": ["bmi"],
-        "systolic_bp": ["systolic_bp", "sbp", "bp", "blood pressure"],
-        "pulse_rate": ["pulse_rate", "pulse", "pr", "heart_rate"],
-        "smoking": ["smoking", "current_smoker", "current smoker", "smoker"],
-        "ex_smoker": ["ex_smoker", "ex-smoker", "former smoker"],
-        "diabetes": ["diabetes", "dm"],
-        "hypertension": ["hypertension", "htn"],
-        "family_history": ["family_history", "fh", "family history"],
-        "typical_chest_pain": ["typical_chest_pain", "typical chest pain"],
-        "st_elevation": ["st_elevation", "st elevation"],
-        "st_depression": ["st_depression", "st depression"],
-        "t_inversion": ["t_inversion", "t inversion", "tinversion"],
-        "lvh": ["lvh"],
-        "fbs": ["fbs", "fasting blood sugar"],
-        "ldl": ["ldl"],
-        "hdl": ["hdl"],
-        "tg": ["tg", "triglycerides"],
-        "ef_tte": ["ef_tte", "ef-tte", "ejection fraction"],
-        "region_rwma": ["region_rwma", "region rwma", "rwma source code"],
-        "vhd": ["vhd"],
+    allowed_keys = {
+        _norm_key(alias)
+        for aliases in DEMO_FEATURE_ALIASES.values()
+        for alias in aliases
     }
+    _validate_feature_keys(raw, allowed_keys)
+    aliases = DEMO_FEATURE_ALIASES
     indexed = {_norm_key(key): value for key, value in raw.items()}
     result: dict[str, Any] = {}
     missing: list[str] = []
@@ -265,10 +369,12 @@ def _linear_explanations(pipeline, frame: pd.DataFrame) -> list[dict[str, Any]]:
 
 def _bundle_predict(raw_features: dict[str, Any], bundle: dict[str, Any]) -> dict[str, Any]:
     expected: list[str] = bundle["feature_columns"]
+    rejection = _feature_key_rejection(
+        raw_features, {_norm_key(name) for name in expected}
+    )
+    if rejection is not None:
+        return rejection
     indexed = {_norm_key(key): value for key, value in raw_features.items()}
-    forbidden = [key for key in raw_features if _norm_key(key) in FORBIDDEN_FEATURES]
-    if forbidden:
-        return {"status": "not_estimable", "reason": "Outcome/diagnostic fields are not accepted as predictors.", "forbidden_fields": forbidden}
     missing = [
         name for name in expected
         if _norm_key(name) not in indexed
@@ -298,14 +404,6 @@ def _bundle_predict(raw_features: dict[str, Any], bundle: dict[str, Any]) -> dic
         if key in INTEGER_FEATURES and not value.is_integer():
             raise ValueError(f"{key} must be an integer")
         row[key] = int(value) if key in INTEGER_FEATURES else value
-    # Training data contain numeric 0/1 flags, while the form uses real booleans.
-    for key in BOOLEAN_FEATURES - {"lvh"}:
-        if key in row:
-            row[key] = int(_as_bool(row[key], key))
-    if row.get("smoking") == 1 and row.get("ex_smoker") == 1:
-        raise ValueError("smoking and ex_smoker cannot both be true for this source-cohort encoding")
-    if "lvh" in row:
-        row["lvh"] = "Y" if _as_bool(row["lvh"], "lvh") else "N"
     if "sex" in row:
         token = str(row["sex"]).strip().lower()
         row["sex"] = "Female" if token in {"female", "fmale", "f"} else ("Male" if token in {"male", "m"} else str(row["sex"]))
@@ -317,6 +415,21 @@ def _bundle_predict(raw_features: dict[str, Any], bundle: dict[str, Any]) -> dic
         if match is None:
             raise ValueError("vhd must be one of N, mild, Moderate, Severe")
         row["vhd"] = match
+
+    # Snapshot the human-readable validated inputs before model encoding.
+    validated_inputs = {
+        name: (_as_bool(row[name], name) if name in BOOLEAN_FEATURES else row[name])
+        for name in expected
+    }
+    if validated_inputs.get("smoking") is True and validated_inputs.get("ex_smoker") is True:
+        raise ValueError("smoking and ex_smoker cannot both be true for this source-cohort encoding")
+
+    # Training data contain numeric 0/1 flags, while the form uses real booleans.
+    for key in BOOLEAN_FEATURES - {"lvh"}:
+        if key in row:
+            row[key] = int(_as_bool(row[key], key))
+    if "lvh" in row:
+        row["lvh"] = "Y" if _as_bool(row["lvh"], "lvh") else "N"
     frame = pd.DataFrame([row], columns=expected)
 
     results: dict[str, Any] = {}
@@ -335,6 +448,7 @@ def _bundle_predict(raw_features: dict[str, Any], bundle: dict[str, Any]) -> dic
         "model_version": metadata.get("version", "research-1"),
         "calibration_status": "uncalibrated_research",
         "target_definition": "Source-cohort prevalent CAD/vessel label; uncalibrated score, external validation required.",
+        "validated_inputs": validated_inputs,
         "results": {
             "cad_present": results["cad_present"],
             "vessels": {"lad": results["lad"], "lcx": results["lcx"], "rca": results["rca"]},
@@ -347,6 +461,163 @@ def _bundle_predict(raw_features: dict[str, Any], bundle: dict[str, Any]) -> dic
             "Whole-vessel labels do not provide lesion location or patient-specific anatomy.",
         ],
     }
+
+
+def _model_bundle_sha256(bundle_path: Path | None = None) -> str | None:
+    """Return the SHA-256 of the trusted local model bundle, when present."""
+    path = Path(bundle_path) if bundle_path is not None else BUNDLE_PATH
+    try:
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+    except OSError:
+        return None
+
+
+def _scikit_learn_version() -> str:
+    return str(sklearn.__version__)
+
+
+def _ordered_validated_features(features: dict[str, Any]) -> dict[str, Any]:
+    # Re-run the canonical validator so a report can never be built from
+    # unvalidated values merely because the caller used the right key names.
+    checked = _checked_demo_features(features)
+    return {name: checked[name] for name in FEATURE_FIELDS}
+
+
+def _report_head_output(prediction: dict[str, Any], target: str) -> dict[str, Any]:
+    results = prediction.get("results")
+    if not isinstance(results, dict):
+        raise ValueError("Prediction results are missing from the report source.")
+    if target == "cad_present":
+        source = results.get("cad_present")
+    else:
+        vessels = results.get("vessels")
+        source = vessels.get(target) if isinstance(vessels, dict) else None
+    if not isinstance(source, dict) or not _is_finite_number(source.get("score")):
+        raise ValueError(f"Prediction result is missing a finite score for '{target}'.")
+    score = float(source["score"])
+    if not 0.0 <= score <= 1.0:
+        raise ValueError(f"Prediction score for '{target}' is outside the 0–1 scale.")
+    return {
+        "score": score,
+        "estimate_type": str(source.get("estimate_type") or "uncalibrated_model_score"),
+        "status": str(source.get("status") or "estimated"),
+        "calibration_status": str(prediction.get("calibration_status") or "uncalibrated"),
+        "interpretation": "Uncalibrated score; not a clinical probability.",
+    }
+
+
+def _report_contributions(prediction: dict[str, Any]) -> list[dict[str, Any]]:
+    explanation = prediction.get("explanation") or []
+    if not isinstance(explanation, list):
+        raise ValueError("Prediction explanation must be a list for a research report.")
+    contributions: list[dict[str, Any]] = []
+    for item in explanation:
+        if not isinstance(item, dict) or not _is_finite_number(item.get("contribution")):
+            continue
+        contributions.append({
+            "label": str(item.get("label") or "Model input"),
+            "value": str(item.get("value") or ""),
+            "unit": str(item.get("unit") or ""),
+            "contribution": float(item["contribution"]),
+            "direction": str(item.get("direction") or ""),
+        })
+    return contributions
+
+
+def build_research_report(
+    validated_features: dict[str, Any],
+    prediction: dict[str, Any],
+    *,
+    model_bundle_sha256: str | None = None,
+    scikit_learn_version: str | None = None,
+) -> dict[str, Any]:
+    """Build a deterministic, self-describing research report.
+
+    The report deliberately contains no timestamp, case identifier, free-text
+    identifier, or raw prediction-object spread. Only allow-listed validated
+    inputs, head outputs, and contribution fields are copied, in fixed order.
+    """
+    if not isinstance(prediction, dict) or prediction.get("status") != "ok":
+        raise ValueError("A research report requires a successful prediction.")
+    mode = prediction.get("mode")
+    if mode not in {"trained_research", "synthetic_demo"}:
+        raise ValueError("A research report requires a trained_research or synthetic_demo prediction.")
+
+    ordered_features = _ordered_validated_features(validated_features)
+    head_outputs = {
+        target: _report_head_output(prediction, target)
+        for target in CV_TARGETS
+    }
+    is_trained = mode == "trained_research"
+    bundle_sha256 = (model_bundle_sha256 or _model_bundle_sha256()) if is_trained else None
+    sklearn_version = (scikit_learn_version or _scikit_learn_version()) if is_trained else None
+    limitations = prediction.get("limitations")
+    if not isinstance(limitations, list) or not all(isinstance(item, str) for item in limitations):
+        limitations = [
+            "Research-only output; not clinically validated.",
+            "Scores are uncalibrated and must not be interpreted as clinical probabilities.",
+        ]
+
+    future_risk = prediction.get("future_risk")
+    if not isinstance(future_risk, dict):
+        future_risk = {"status": "unavailable", "reason": "No longitudinal future-event model is included."}
+
+    return {
+        "report_type": REPORT_TYPE,
+        "schema_version": REPORT_SCHEMA_VERSION,
+        "mode": mode,
+        "model": {
+            "model_id": str(prediction.get("model_id") or "unknown"),
+            "model_version": str(prediction.get("model_version") or "unknown"),
+            "calibration_status": str(prediction.get("calibration_status") or "uncalibrated"),
+            "model_bundle_sha256": bundle_sha256,
+            "model_bundle_status": (
+                "available" if bundle_sha256 else "unavailable"
+            ) if is_trained else "not_applicable_synthetic_demo",
+            "scikit_learn_version": sklearn_version,
+        },
+        "inputs": {
+            "provenance": "validated_synthetic_inputs",
+            "contains_identifiers": False,
+            "features": ordered_features,
+        },
+        "head_outputs": head_outputs,
+        "log_odds_contributions": _report_contributions(prediction),
+        "contribution_basis": (
+            "Local linear log-odds contributions for the overall CAD head; not causal effects or treatment guidance."
+            if is_trained
+            else "Synthetic demo logit contributions; not trained-model log-odds, causal effects, or clinical explanations."
+        ),
+        "future_risk": {
+            "status": str(future_risk.get("status") or "unavailable"),
+            "reason": str(future_risk.get("reason") or "No longitudinal future-event model is included."),
+        },
+        "disclaimer": NON_CLINICAL_DISCLAIMER,
+        "limitations": list(limitations),
+    }
+
+
+def research_report_filename(report: dict[str, Any]) -> str:
+    mode = report.get("mode") if isinstance(report, dict) else None
+    if mode not in {"trained_research", "synthetic_demo"}:
+        mode = "synthetic_demo"
+    return f"cardiolens-research-report-v{REPORT_SCHEMA_VERSION}-{mode}.json"
+
+
+def _report_for_features(raw_features: dict[str, Any]) -> dict[str, Any]:
+    if BUNDLE:
+        prediction = _bundle_predict(raw_features, BUNDLE)
+        if prediction.get("status") != "ok":
+            raise ValueError(str(prediction.get("reason") or "The research model could not estimate this case."))
+        validated_features = prediction["validated_inputs"]
+    else:
+        validated_features = _checked_demo_features(raw_features)
+        prediction = _demo_predict(validated_features)
+    return build_research_report(validated_features, prediction)
 
 
 def _cv_unavailable(reason: str) -> dict[str, Any]:
@@ -509,6 +780,7 @@ def health() -> dict[str, Any]:
 def model_info() -> dict[str, Any]:
     if BUNDLE:
         meta = BUNDLE.get("metadata", {})
+        bundle_sha256 = _model_bundle_sha256()
         return {
             "mode": "trained_research",
             "model_id": meta.get("model_id", "local-logistic-baseline"),
@@ -517,6 +789,9 @@ def model_info() -> dict[str, Any]:
             "training_rows": meta.get("source_rows"),
             "label_consistency": meta.get("label_consistency"),
             "calibration_status": "uncalibrated_research",
+            "model_bundle_sha256": bundle_sha256,
+            "model_bundle_status": "available" if bundle_sha256 else "unavailable",
+            "scikit_learn_version": _scikit_learn_version(),
             "targets": list(CV_TARGETS),
             "cv_summary": _load_cv_summary(),
             "future_risk_available": False,
@@ -527,6 +802,9 @@ def model_info() -> dict[str, Any]:
         "model_version": "0.2.0-demo",
         "feature_count": len(FEATURE_LABELS),
         "calibration_status": "not_calibrated_synthetic",
+        "model_bundle_sha256": None,
+        "model_bundle_status": "not_applicable_synthetic_demo",
+        "scikit_learn_version": None,
         "targets": list(CV_TARGETS),
         "cv_summary": _cv_unavailable(
             "The synthetic demo formula has no trained-model cross-validation summary."
@@ -578,3 +856,18 @@ def predict(request: PredictionRequest) -> JSONResponse:
     except (ValueError, TypeError) as exc:
         return JSONResponse(status_code=422, content={"status": "invalid_input", "message": str(exc)})
     return JSONResponse(content=result)
+
+
+@app.post("/api/report")
+def report(request: PredictionRequest) -> JSONResponse:
+    """Return a deterministic JSON research report as a download."""
+    try:
+        report_payload = _report_for_features(request.features)
+    except (ValueError, TypeError) as exc:
+        return JSONResponse(status_code=422, content={"status": "invalid_input", "message": str(exc)})
+    return JSONResponse(
+        content=report_payload,
+        headers={
+            "Content-Disposition": f'attachment; filename="{research_report_filename(report_payload)}"'
+        },
+    )

@@ -9,6 +9,11 @@ import {
   getTargetCvSummary,
   resolveCvSummary,
 } from './model-metrics.js';
+import {
+  buildResearchReport,
+  researchReportFilename,
+  serializeResearchReport,
+} from './research-report.js';
 import PreventionWorkspace from './PreventionWorkspace.jsx';
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '');
@@ -167,6 +172,7 @@ function Icon({ name, size = 17 }) {
     activity: <><path d="M3 12h4l3-8 4 16 3-8h4" /></>,
     info: <><circle cx="12" cy="12" r="9" /><path d="M12 11v5" /><path d="M12 8h.01" /></>,
     spark: <><path d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3Z" /><path d="m19 16 .8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8L19 16Z" /></>,
+    download: <><path d="M12 3v11" /><path d="m7.5 10.5 4.5 4.5 4.5-4.5" /><path d="M4 19h16" /></>,
   };
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
 }
@@ -200,6 +206,18 @@ function NumberField({ label, name, value, unit, min, max, onChange }) {
 function scoreLabel(score) {
   if (typeof score !== 'number' || !Number.isFinite(score)) return '—';
   return score.toFixed(2);
+}
+
+function downloadTextFile(filename, text) {
+  const blob = new Blob([text], { type: 'application/json;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
 }
 
 function ScoreMeter({ score, selected }) {
@@ -280,6 +298,7 @@ function App() {
   const [vesselPalette, setVesselPalette] = useState('viridis');
   const [sceneMode, setSceneMode] = useState('webgl');
   const [busy, setBusy] = useState(false);
+  const [reportBusy, setReportBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [apiError, setApiError] = useState('');
   const [apiReady, setApiReady] = useState(false);
@@ -326,6 +345,39 @@ function App() {
       setPrediction(null);
     } finally {
       if (version === requestVersion.current) setBusy(false);
+    }
+  }
+
+  async function downloadReport() {
+    if (!prediction || prediction.status !== 'ok' || dirty || validationErrors.length) return;
+    setReportBusy(true);
+    setApiError('');
+    try {
+      let reportText;
+      let filename;
+      if (hasRemoteApi()) {
+        const response = await fetch(apiUrl('/api/report'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ schema_version: '0.2', features }),
+        });
+        reportText = await response.text();
+        if (!response.ok) {
+          let message = 'Report service returned an error.';
+          try { message = JSON.parse(reportText).message || message; } catch { /* keep fallback */ }
+          throw new Error(message);
+        }
+        filename = researchReportFilename({ mode: prediction.mode });
+      } else {
+        const report = buildResearchReport({ features, prediction, modelInfo });
+        reportText = serializeResearchReport(report);
+        filename = researchReportFilename(report);
+      }
+      downloadTextFile(filename, reportText);
+    } catch (error) {
+      setApiError(`${error.message || 'Could not download the research report.'} No report was generated.`);
+    } finally {
+      setReportBusy(false);
     }
   }
 
@@ -603,6 +655,16 @@ function App() {
                 <div><small>FUTURE CARDIOVASCULAR RISK</small><strong>Not calculated</strong><p>No longitudinal model or validated time horizon is included.</p></div>
                 <span className="lock-mark">—</span>
               </div>
+              <button
+                type="button"
+                className="report-download-button"
+                onClick={downloadReport}
+                disabled={reportBusy || busy || dirty || validationErrors.length > 0 || prediction?.status !== 'ok'}
+              >
+                <Icon name="download" size={15} />
+                {reportBusy ? 'Preparing report…' : 'Download JSON report'}
+              </button>
+              <p className="report-download-note">Deterministic research report · validated synthetic inputs only · no identifiers</p>
             </section>
 
             <section className="panel vessel-detail-panel">

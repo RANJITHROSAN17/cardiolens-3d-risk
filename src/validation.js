@@ -11,18 +11,57 @@ export const SEX_CATEGORIES = ['Female', 'Male'];
 export const VHD_CATEGORIES = ['N', 'mild', 'Moderate', 'Severe'];
 export const INTEGER_FEATURES = ['region_rwma'];
 export const FORBIDDEN_FEATURES = ['cad', 'cath', 'lad', 'lcx', 'rca'];
+export const FEATURE_FIELDS = [
+  'age', 'sex', 'bmi', 'diabetes', 'hypertension', 'smoking', 'ex_smoker',
+  'family_history', 'systolic_bp', 'pulse_rate', 'typical_chest_pain',
+  'st_elevation', 'st_depression', 't_inversion', 'lvh', 'fbs', 'tg',
+  'ldl', 'hdl', 'ef_tte', 'region_rwma', 'vhd',
+];
+export const IDENTIFIER_FIELDS = ['name', 'patient_id', 'mrn', 'dob', 'email', 'phone', 'address'];
+
 // Machine-readable contract, exercised directly by the Python parity test.
 export const VALIDATION_SCHEMA = {
   numeric_ranges: NUMERIC_RANGES, boolean_features: BOOLEAN_FEATURES,
   sex: SEX_CATEGORIES, vhd: VHD_CATEGORIES,
   integer_features: INTEGER_FEATURES, forbidden_features: FORBIDDEN_FEATURES,
+  feature_fields: FEATURE_FIELDS, identifier_fields: IDENTIFIER_FIELDS,
 };
 
+const normalizeKey = (key) => String(key).trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
+const IDENTIFIER_NORMALIZED_KEYS = new Set([
+  ...IDENTIFIER_FIELDS.map(normalizeKey),
+  'fullname', 'patientname', 'dateofbirth', 'phonenumber', 'telephonenumber',
+  'mobilenumber', 'emailaddress', 'homeaddress', 'postaladdress',
+  'streetaddress', 'medicalrecordnumber',
+]);
+
+export function isIdentifierField(key) {
+  const normalized = normalizeKey(key);
+  return IDENTIFIER_NORMALIZED_KEYS.has(normalized)
+    || normalized.endsWith('name')
+    || normalized.startsWith('patient')
+    || normalized.includes('email')
+    || normalized.includes('phone')
+    || normalized.includes('telephone')
+    || normalized.includes('mobile')
+    || normalized.includes('address')
+    || normalized.includes('birth')
+    || normalized.includes('medicalrecord');
+}
+
 export function validateCase(features) {
+  if (!features || typeof features !== 'object' || Array.isArray(features)) {
+    return ['Case inputs must be an object of validated synthetic fields'];
+  }
+
   const errors = [];
   for (const key of Object.keys(features)) {
-    if (FORBIDDEN_FEATURES.includes(key.trim().toLowerCase().replace(/[^a-z0-9]+/g, ''))) {
+    if (isIdentifierField(key)) {
+      errors.push(`${key} is an identifier/PHI field and must not be entered`);
+    } else if (FORBIDDEN_FEATURES.includes(normalizeKey(key))) {
       errors.push(`${key} is an outcome/diagnostic field, not a predictor`);
+    } else if (!FEATURE_FIELDS.includes(key)) {
+      errors.push(`${key} is not a supported input field`);
     }
   }
   for (const [name, [min, max]] of Object.entries(NUMERIC_RANGES)) {

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
-import { validateCase, VALIDATION_SCHEMA } from '../src/validation.js';
+import { validateCase, VALIDATION_SCHEMA, IDENTIFIER_FIELDS, isIdentifierField } from '../src/validation.js';
 const valid = { age:58, sex:'Female', bmi:27, systolic_bp:138, pulse_rate:74, fbs:96, ldl:122, hdl:48, tg:154, ef_tte:55, region_rwma:0, vhd:'N', smoking:false, ex_smoker:false, diabetes:false, hypertension:true, family_history:true, typical_chest_pain:false, st_elevation:false, st_depression:false, t_inversion:true, lvh:false };
 test('complete demo passes', () => assert.deepEqual(validateCase(valid), []));
 test('blank and out of range do not score', () => { assert.ok(validateCase({...valid, age:''}).length); assert.ok(validateCase({...valid, ldl:501}).length); });
@@ -33,3 +33,24 @@ for (const key of ['CAD', 'Cath', 'LAD', 'LCX', 'RCA', ' c-A_d ']) {
     assert.ok(validateCase({...valid, [key]:false}).some(error => error.includes('not a predictor')));
   });
 }
+for (const key of IDENTIFIER_FIELDS) {
+  test(`identifier field ${key} is rejected`, () => {
+    assert.equal(isIdentifierField(key), true);
+    assert.ok(validateCase({...valid, [key]:'synthetic-value'}).some(error => error.includes('identifier/PHI field')));
+  });
+}
+for (const key of ['patientId', 'patient-id', 'Patient ID', 'date_of_birth', 'e-mail', 'phone_number', 'home_address', 'medical_record_number']) {
+  test(`identifier variant ${key} is rejected`, () => {
+    assert.equal(isIdentifierField(key), true);
+    assert.ok(validateCase({...valid, [key]:'synthetic-value'}).some(error => error.includes('identifier/PHI field')));
+  });
+}
+test('unexpected input keys are rejected', () => {
+  assert.ok(validateCase({...valid, unexpected_note:'synthetic-value'}).some(error => error.includes('not a supported input field')));
+  assert.ok(validateCase({...valid, clinician_comment:'synthetic-value'}).some(error => error.includes('not a supported input field')));
+});
+test('validation schema exports the canonical and identifier field lists', () => {
+  assert.equal(VALIDATION_SCHEMA.feature_fields.length, 22);
+  assert.deepEqual(VALIDATION_SCHEMA.identifier_fields, IDENTIFIER_FIELDS);
+  assert.equal(new Set(VALIDATION_SCHEMA.feature_fields).size, 22);
+});
