@@ -39,6 +39,8 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 FORBIDDEN = {"cad", "lad", "lcx", "rca", "cath"}
 TARGETS = {"cad_present": "cad", "lad": "lad", "lcx": "lcx", "rca": "rca"}
+CALIBRATION_BIN_COUNT = 5
+_LOGIT_EPSILON = 1e-6
 ID_NAMES = {"id", "patientid", "recordid", "subjectid", "serialnumber", "name"}
 POSITIVE = {"1", "1.0", "true", "yes", "y", "positive", "pos", "present", "stenosis", "stenotic", "disease", "cad"}
 NEGATIVE = {"0", "0.0", "false", "no", "n", "negative", "neg", "absent", "normal", "nocad", "nostenosis"}
@@ -222,6 +224,73 @@ def _safe_metrics(y_true: np.ndarray, probability: np.ndarray, threshold: float 
     return {key: float(value) for key, value in metrics.items()}
 
 
+def calibration_summary(
+    y_true: np.ndarray,
+    probability: np.ndarray,
+    n_bins: int = CALIBRATION_BIN_COUNT,
+) -> dict[str, Any]:
+    """Summarize uncalibrated out-of-fold scores with quantile bins.
+
+    The bins are formed from held-out scores only. ``slope`` and ``intercept``
+    come from a descriptive, unpenalized logistic recalibration fit,
+    ``logit(observed) ~= intercept + slope * logit(score)``; fitting that
+    diagnostic does not recalibrate the model or its reported scores.
+    """
+    labels = np.asarray(y_true)
+    scores = np.asarray(probability, dtype=float)
+    if labels.ndim != 1 or scores.ndim != 1 or len(labels) != len(scores) or len(labels) == 0:
+        raise ValueError("Calibration labels and scores must be non-empty arrays of equal length")
+    if not np.isin(labels, [0, 1]).all():
+        raise ValueError("Calibration labels must be binary 0/1 values")
+    labels = labels.astype(int)
+    if set(np.unique(labels)) != {0, 1}:
+        raise ValueError("Calibration needs both positive and negative cases")
+    if not np.isfinite(scores).all() or np.any((scores < 0.0) | (scores > 1.0)):
+        raise ValueError("Calibration scores must be finite probabilities in [0, 1]")
+    if isinstance(n_bins, (bool, np.bool_)) or not isinstance(n_bins, (int, np.integer)):
+        raise ValueError("Calibration bin count must be a positive integer")
+    n_bins = int(n_bins)
+    if n_bins < 1 or n_bins > len(labels):
+        raise ValueError("Calibration bin count must be between 1 and the number of predictions")
+
+    # Rank-based quantile bins keep every bin non-empty and make the counts
+    # differ by at most one, including when many held-out scores are tied.
+    order = np.argsort(scores, kind="stable")
+    bins = []
+    for bin_index, indices in enumerate(np.array_split(order, n_bins)):
+        bins.append({
+            "bin": bin_index,
+            "count": int(len(indices)),
+            "mean_predicted_score": float(np.mean(scores[indices])),
+            "observed_fraction": float(np.mean(labels[indices])),
+        })
+
+    clipped = np.clip(scores, _LOGIT_EPSILON, 1.0 - _LOGIT_EPSILON)
+    logits = np.log(clipped / (1.0 - clipped))
+    recalibration = LogisticRegression(penalty=None, solver="newton-cg", max_iter=1000, tol=1e-8)
+    recalibration.fit(logits.reshape(-1, 1), labels)
+    slope = float(recalibration.coef_[0][0])
+    intercept = float(recalibration.intercept_[0])
+    if not np.isfinite([slope, intercept]).all():
+        raise ValueError("Calibration slope and intercept must be finite")
+
+    return {
+        "status": "uncalibrated_research",
+        "method": "pooled_out_of_fold_quantile_bins_and_logistic_recalibration",
+        "binning": "quantile",
+        "n_bins": n_bins,
+        "sample_count": int(len(labels)),
+        "prediction_count": int(len(labels)),
+        "bins": bins,
+        "slope": slope,
+        "intercept": intercept,
+        "note": (
+            "Descriptive internal-CV calibration diagnostic for uncalibrated scores; "
+            "it is not post-hoc calibration, external validation, or a clinical benchmark."
+        ),
+    }
+
+
 def repeated_cv(x: pd.DataFrame, y: np.ndarray) -> dict[str, Any]:
     counts = np.bincount(y.astype(int), minlength=2)
     minority = int(counts.min())
@@ -231,20 +300,39 @@ def repeated_cv(x: pd.DataFrame, y: np.ndarray) -> dict[str, Any]:
     splitter = RepeatedStratifiedKFold(n_splits=folds, n_repeats=5, random_state=2026)
     template = make_pipeline(x)
     rows = []
+    held_out_labels = []
+    held_out_probabilities = []
     for train_index, test_index in splitter.split(x, y):
         model = clone(template)
         model.fit(x.iloc[train_index], y[train_index])
         probability = model.predict_proba(x.iloc[test_index])[:, 1]
         rows.append(_safe_metrics(y[test_index], probability))
+        held_out_labels.append(y[test_index].astype(int))
+        held_out_probabilities.append(probability)
     summary = {}
     for key in rows[0]:
         values = np.array([row[key] for row in rows], dtype=float)
         summary[key] = {"mean": float(np.nanmean(values)), "sd_across_folds": float(np.nanstd(values, ddof=1))}
+    calibration = calibration_summary(
+        np.concatenate(held_out_labels),
+        np.concatenate(held_out_probabilities),
+    )
+    # The pooled calibration arrays contain one held-out prediction per sample
+    # per repeat. Make that explicit so 5 repeats are not read as 5x as many
+    # independent patients.
+    calibration["sample_count"] = int(len(y))
+    calibration["prediction_count"] = int(sum(bin_row["count"] for bin_row in calibration["bins"]))
+    calibration["note"] = (
+        "Pooled held-out predictions from all repeats; repeats reuse the same samples and are not "
+        "independent patients. Descriptive diagnostic for uncalibrated scores only—not post-hoc "
+        "calibration, external validation, or a clinical benchmark."
+    )
     return {
         "folds": folds,
         "repeats": 5,
         "fold_metrics": rows,
         "summary": summary,
+        "calibration": calibration,
         "class_counts": {"negative": int(counts[0]), "positive": int(counts[1])},
         "threshold": 0.5,
         "note": "Repeated internal CV of a fixed baseline; not external validation and not a clinical benchmark.",

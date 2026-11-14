@@ -288,6 +288,49 @@
         "sd_across_folds": 0.010817556486061117
       }
     },
+    "calibration": {
+      "status": "uncalibrated_research",
+      "method": "pooled_out_of_fold_quantile_bins_and_logistic_recalibration",
+      "binning": "quantile",
+      "n_bins": 5,
+      "sample_count": 303,
+      "prediction_count": 1515,
+      "bins": [
+        {
+          "bin": 0,
+          "count": 303,
+          "mean_predicted_score": 0.07416462268259535,
+          "observed_fraction": 0.132013201320132
+        },
+        {
+          "bin": 1,
+          "count": 303,
+          "mean_predicted_score": 0.3892266376012545,
+          "observed_fraction": 0.570957095709571
+        },
+        {
+          "bin": 2,
+          "count": 303,
+          "mean_predicted_score": 0.7706139108604942,
+          "observed_fraction": 0.8943894389438944
+        },
+        {
+          "bin": 3,
+          "count": 303,
+          "mean_predicted_score": 0.9432975832045187,
+          "observed_fraction": 0.966996699669967
+        },
+        {
+          "bin": 4,
+          "count": 303,
+          "mean_predicted_score": 0.9911048645530677,
+          "observed_fraction": 1.0
+        }
+      ],
+      "slope": 1.0665895164878834,
+      "intercept": 0.8243236028295585,
+      "note": "Pooled held-out predictions from all repeats; repeats reuse the same samples and are not independent patients. Descriptive diagnostic for uncalibrated scores only\u2014not post-hoc calibration, external validation, or a clinical benchmark."
+    },
     "class_counts": {
       "negative": 87,
       "positive": 216
@@ -583,6 +626,49 @@
         "mean": 0.881353096675843,
         "sd_across_folds": 0.042270869447019625
       }
+    },
+    "calibration": {
+      "status": "uncalibrated_research",
+      "method": "pooled_out_of_fold_quantile_bins_and_logistic_recalibration",
+      "binning": "quantile",
+      "n_bins": 5,
+      "sample_count": 303,
+      "prediction_count": 1515,
+      "bins": [
+        {
+          "bin": 0,
+          "count": 303,
+          "mean_predicted_score": 0.08286721562028077,
+          "observed_fraction": 0.10561056105610561
+        },
+        {
+          "bin": 1,
+          "count": 303,
+          "mean_predicted_score": 0.28766879068446927,
+          "observed_fraction": 0.42574257425742573
+        },
+        {
+          "bin": 2,
+          "count": 303,
+          "mean_predicted_score": 0.5642638380742323,
+          "observed_fraction": 0.6666666666666666
+        },
+        {
+          "bin": 3,
+          "count": 303,
+          "mean_predicted_score": 0.7912468548613011,
+          "observed_fraction": 0.801980198019802
+        },
+        {
+          "bin": 4,
+          "count": 303,
+          "mean_predicted_score": 0.9446837635036769,
+          "observed_fraction": 0.9207920792079208
+        }
+      ],
+      "slope": 0.8800479800835107,
+      "intercept": 0.33118036737998335,
+      "note": "Pooled held-out predictions from all repeats; repeats reuse the same samples and are not independent patients. Descriptive diagnostic for uncalibrated scores only\u2014not post-hoc calibration, external validation, or a clinical benchmark."
     },
     "class_counts": {
       "negative": 126,
@@ -880,6 +966,49 @@
         "sd_across_folds": 0.061703840034939623
       }
     },
+    "calibration": {
+      "status": "uncalibrated_research",
+      "method": "pooled_out_of_fold_quantile_bins_and_logistic_recalibration",
+      "binning": "quantile",
+      "n_bins": 5,
+      "sample_count": 303,
+      "prediction_count": 1515,
+      "bins": [
+        {
+          "bin": 0,
+          "count": 303,
+          "mean_predicted_score": 0.11528645760869925,
+          "observed_fraction": 0.07260726072607261
+        },
+        {
+          "bin": 1,
+          "count": 303,
+          "mean_predicted_score": 0.28435765244078287,
+          "observed_fraction": 0.2706270627062706
+        },
+        {
+          "bin": 2,
+          "count": 303,
+          "mean_predicted_score": 0.47114286003671446,
+          "observed_fraction": 0.48184818481848185
+        },
+        {
+          "bin": 3,
+          "count": 303,
+          "mean_predicted_score": 0.6490795149579656,
+          "observed_fraction": 0.5412541254125413
+        },
+        {
+          "bin": 4,
+          "count": 303,
+          "mean_predicted_score": 0.8273191418366475,
+          "observed_fraction": 0.5973597359735974
+        }
+      ],
+      "slope": 0.6641120478593405,
+      "intercept": -0.39433272852842954,
+      "note": "Pooled held-out predictions from all repeats; repeats reuse the same samples and are not independent patients. Descriptive diagnostic for uncalibrated scores only\u2014not post-hoc calibration, external validation, or a clinical benchmark."
+    },
     "class_counts": {
       "negative": 184,
       "positive": 119
@@ -1175,6 +1304,49 @@
         "mean": 0.5854024794669054,
         "sd_across_folds": 0.08543419697484979
       }
+    },
+    "calibration": {
+      "status": "uncalibrated_research",
+      "method": "pooled_out_of_fold_quantile_bins_and_logistic_recalibration",
+      "binning": "quantile",
+      "n_bins": 5,
+      "sample_count": 303,
+      "prediction_count": 1515,
+      "bins": [
+        {
+          "bin": 0,
+          "count": 303,
+          "mean_predicted_score": 0.1239136011675174,
+          "observed_fraction": 0.07590759075907591
+        },
+        {
+          "bin": 1,
+          "count": 303,
+          "mean_predicted_score": 0.2936483353629935,
+          "observed_fraction": 0.31683168316831684
+        },
+        {
+          "bin": 2,
+          "count": 303,
+          "mean_predicted_score": 0.4737590324727492,
+          "observed_fraction": 0.44224422442244227
+        },
+        {
+          "bin": 3,
+          "count": 303,
+          "mean_predicted_score": 0.6264612144432259,
+          "observed_fraction": 0.47194719471947194
+        },
+        {
+          "bin": 4,
+          "count": 303,
+          "mean_predicted_score": 0.8148098014263893,
+          "observed_fraction": 0.5742574257425742
+        }
+      ],
+      "slope": 0.6538332123158059,
+      "intercept": -0.4628759064332974,
+      "note": "Pooled held-out predictions from all repeats; repeats reuse the same samples and are not independent patients. Descriptive diagnostic for uncalibrated scores only\u2014not post-hoc calibration, external validation, or a clinical benchmark."
     },
     "class_counts": {
       "negative": 189,
