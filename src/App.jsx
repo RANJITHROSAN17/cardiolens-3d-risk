@@ -2,6 +2,13 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { validateCase } from './validation.js';
 import HeartScene from './HeartScene.jsx';
 import { paletteGradient } from './heart-visualization.js';
+import {
+  formatClassCounts,
+  formatCvDesign,
+  formatMeanSd,
+  getTargetCvSummary,
+  resolveCvSummary,
+} from './model-metrics.js';
 import PreventionWorkspace from './PreventionWorkspace.jsx';
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '');
@@ -200,15 +207,64 @@ function ScoreMeter({ score, selected }) {
   return <div className={`score-meter ${selected ? 'selected' : ''}`}><span style={{ width: `${width}%` }} /></div>;
 }
 
-function VesselCard({ id, score, selected, onClick }) {
+function VesselCard({ id, score, cvSummary, selected, onClick }) {
   const meta = VESSEL_META[id];
+  const cvContext = getTargetCvSummary(cvSummary, id);
   return (
     <button type="button" className={`vessel-card ${selected ? 'active' : ''}`} onClick={onClick} aria-pressed={selected}>
       <span className={`vessel-dot ${id}`} />
-      <span className="vessel-copy"><strong>{meta.title}</strong><small>{meta.territory}</small></span>
+      <span className="vessel-copy">
+        <strong>{meta.title}</strong>
+        <small>{meta.territory}</small>
+        <small className="vessel-cv">CV ROC-AUC {formatMeanSd(cvContext?.roc_auc, 2)}</small>
+      </span>
       <span className="vessel-score">{scoreLabel(score)}</span>
       <ScoreMeter score={score} selected={selected} />
     </button>
+  );
+}
+
+function CvMetric({ label, metric, hint }) {
+  return (
+    <div className="cv-metric">
+      <span>{label}</span>
+      <strong>{formatMeanSd(metric)}</strong>
+      {hint && <small>{hint}</small>}
+    </div>
+  );
+}
+
+function CvContext({ targetId, cvSummary, title, isDemo, compact = false }) {
+  const target = getTargetCvSummary(cvSummary, targetId);
+  const sourceLabel = cvSummary?.source === 'bundled_static' ? 'Bundled static summary' : 'API summary';
+
+  return (
+    <div className={`cv-context ${compact ? 'compact' : ''}`} aria-label={`${title}: internal cross-validation context`}>
+      <div className="cv-context-heading">
+        <span>{title}</span>
+        <span>{formatCvDesign(cvSummary)}</span>
+      </div>
+      {target ? (
+        <>
+          <div className="cv-metric-grid">
+            <CvMetric label="ROC-AUC" metric={target.roc_auc} />
+            <CvMetric label="PR-AUC" metric={target.pr_auc} />
+            <CvMetric label="Brier" metric={target.brier} hint="lower is better" />
+          </div>
+          <div className="cv-context-meta">
+            <span>{formatClassCounts(target)}</span>
+            <span>Threshold {target.threshold.toFixed(2)}</span>
+            <span>{sourceLabel}</span>
+          </div>
+          <p className="cv-context-note">
+            Mean ± SD across internal CV folds only — not a patient-level confidence interval or clinical probability.
+            {isDemo && ' This context describes the trained research baseline; it does not validate the synthetic demo score.'}
+          </p>
+        </>
+      ) : (
+        <p className="cv-context-note">Internal CV context is unavailable for this head. No dispersion value is shown rather than a fabricated estimate.</p>
+      )}
+    </div>
   );
 }
 
@@ -319,6 +375,7 @@ function App() {
   const isDemo = currentMode === 'synthetic_demo';
   const cadScore = prediction?.results?.cad_present?.score;
   const vesselResults = prediction?.results?.vessels || {};
+  const cvSummary = useMemo(() => resolveCvSummary(modelInfo), [modelInfo]);
   const currentVessel = useMemo(() => VESSEL_META[activeVessel], [activeVessel]);
 
   function updateFeature(name, value) {
@@ -513,7 +570,7 @@ function App() {
               </div>
               <div className="vessel-list-heading"><span>Select a coronary territory</span><span>Tap a vessel or its score</span></div>
               <div className="vessel-card-row">
-                {['lad', 'lcx', 'rca'].map((id) => <VesselCard key={id} id={id} score={vesselResults[id]?.score} selected={activeVessel === id} onClick={() => setActiveVessel(id)} />)}
+                {['lad', 'lcx', 'rca'].map((id) => <VesselCard key={id} id={id} score={vesselResults[id]?.score} cvSummary={cvSummary} selected={activeVessel === id} onClick={() => setActiveVessel(id)} />)}
               </div>
               <div className="anatomy-footnote"><span className="footnote-mark">i</span><span>{isDemo ? 'Colors encode synthetic whole-vessel scores only.' : 'Colors encode uncalibrated research scores only.'}</span></div>
             </div>
@@ -539,6 +596,7 @@ function App() {
                 </>
               )}
               <div className="model-version-row"><span>MODEL</span><strong>{prediction?.model_version || modelInfo?.model_version || 'Loading…'}</strong></div>
+              <CvContext targetId="cad_present" cvSummary={cvSummary} title="OVERALL CAD HEAD · INTERNAL CV" isDemo={isDemo} compact />
               <div className="result-divider" />
               <div className="future-risk-box">
                 <div className="future-icon"><Icon name="activity" size={16} /></div>
@@ -552,6 +610,7 @@ function App() {
               <div className="selected-vessel-title"><div><h3>{currentVessel.title}</h3><p>{currentVessel.full}</p></div><span className="vessel-pill">{currentVessel.territory}</span></div>
               <div className="detail-score"><span>{isDemo ? 'Demo score' : 'Research score'}</span><strong>{scoreLabel(vesselResults[activeVessel]?.score)}</strong></div>
               <ScoreMeter score={vesselResults[activeVessel]?.score} selected />
+              <CvContext targetId={activeVessel} cvSummary={cvSummary} title="SELECTED HEAD · INTERNAL CV" isDemo={isDemo} />
               <p className="vessel-detail-note">A vessel-level output is highlighted on the schematic. No segment-level prediction is available.</p>
             </section>
 
