@@ -6,6 +6,7 @@ is clinically validated or for patient care.
 """
 from __future__ import annotations
 
+import json
 import math
 import os
 import re
@@ -22,6 +23,15 @@ from pydantic import BaseModel, Field
 APP_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_BUNDLE = APP_ROOT / "artifacts" / "model_bundle.joblib"
 BUNDLE_PATH = Path(os.getenv("CARDIO_MODEL_BUNDLE", str(DEFAULT_BUNDLE)))
+DEFAULT_METRICS = APP_ROOT / "artifacts" / "metrics.json"
+METRICS_PATH = Path(os.getenv("CARDIO_MODEL_METRICS", str(DEFAULT_METRICS)))
+CV_TARGETS = ("cad_present", "lad", "lcx", "rca")
+CV_METRICS = ("roc_auc", "pr_auc", "brier")
+CV_INTERPRETATION = (
+    "Internal CV summary only: each value is the mean ± SD across repeated "
+    "stratified cross-validation folds in the source cohort. It is not a "
+    "patient-level confidence interval, prediction interval, or clinical probability."
+)
 FORBIDDEN_FEATURES = {"cad", "lad", "lcx", "rca", "cath"}
 BOOLEAN_FEATURES = {
     "diabetes", "hypertension", "smoking", "ex_smoker", "family_history",
@@ -339,6 +349,138 @@ def _bundle_predict(raw_features: dict[str, Any], bundle: dict[str, Any]) -> dic
     }
 
 
+def _cv_unavailable(reason: str) -> dict[str, Any]:
+    return {
+        "status": "unavailable",
+        "reason": reason,
+        "interpretation": CV_INTERPRETATION,
+        "targets": {},
+    }
+
+
+def _is_finite_number(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(float(value))
+
+
+def _bounded_cv_number(value: Any) -> float | None:
+    if not _is_finite_number(value):
+        return None
+    number = float(value)
+    return number if 0.0 <= number <= 1.0 else None
+
+
+def _positive_cv_int(value: Any) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        return None
+    return value
+
+
+def _nonnegative_cv_int(value: Any) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return None
+    return value
+
+
+def _cv_metric_summary(value: Any) -> dict[str, float] | None:
+    if not isinstance(value, dict):
+        return None
+    mean = _bounded_cv_number(value.get("mean"))
+    sd = _bounded_cv_number(value.get("sd_across_folds"))
+    if mean is None or sd is None:
+        return None
+    return {"mean": mean, "sd_across_folds": sd}
+
+
+def _load_cv_summary(metrics_path: Path | None = None) -> dict[str, Any]:
+    """Load a compact, validated CV summary without exposing per-fold rows.
+
+    The training artifact intentionally contains every fold's metrics. The API
+    returns only the per-target mean/SD pairs needed by the UI so callers do
+    not receive (or accidentally visualize) the raw fold-level payload. Any
+    missing or malformed value fails closed as ``unavailable`` rather than
+    being replaced with a fabricated zero.
+    """
+    path = Path(metrics_path) if metrics_path is not None else METRICS_PATH
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return _cv_unavailable("Internal cross-validation metrics artifact is not installed.")
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return _cv_unavailable("Internal cross-validation metrics artifact could not be read.")
+
+    if not isinstance(raw, dict):
+        return _cv_unavailable("Internal cross-validation metrics artifact has an invalid structure.")
+
+    targets: dict[str, Any] = {}
+    designs: set[tuple[int, int]] = set()
+    cohort_sizes: set[int] = set()
+    for target in CV_TARGETS:
+        entry = raw.get(target)
+        if not isinstance(entry, dict) or not isinstance(entry.get("summary"), dict):
+            return _cv_unavailable(f"Internal cross-validation summary is missing target '{target}'.")
+
+        folds = _positive_cv_int(entry.get("folds"))
+        repeats = _positive_cv_int(entry.get("repeats"))
+        if folds is None or repeats is None:
+            return _cv_unavailable(f"Internal cross-validation design is invalid for target '{target}'.")
+        designs.add((folds, repeats))
+
+        summary: dict[str, Any] = {}
+        for metric in CV_METRICS:
+            metric_summary = _cv_metric_summary(entry["summary"].get(metric))
+            if metric_summary is None:
+                return _cv_unavailable(
+                    f"Internal cross-validation metric '{metric}' is invalid for target '{target}'."
+                )
+            summary[metric] = metric_summary
+
+        counts = entry.get("class_counts")
+        if not isinstance(counts, dict):
+            return _cv_unavailable(f"Internal cross-validation class counts are missing for target '{target}'.")
+        positive = _nonnegative_cv_int(counts.get("positive"))
+        negative = _nonnegative_cv_int(counts.get("negative"))
+        if positive is None or negative is None or positive + negative <= 0:
+            return _cv_unavailable(f"Internal cross-validation class counts are invalid for target '{target}'.")
+        cohort_n = positive + negative
+        cohort_sizes.add(cohort_n)
+
+        threshold = _bounded_cv_number(entry.get("threshold"))
+        if threshold is None:
+            return _cv_unavailable(f"Internal cross-validation threshold is invalid for target '{target}'.")
+
+        target_summary: dict[str, Any] = {
+            **summary,
+            "class_counts": {"positive": positive, "negative": negative},
+            "cohort_n": cohort_n,
+            "threshold": threshold,
+        }
+        if isinstance(entry.get("note"), str) and entry["note"].strip():
+            target_summary["note"] = entry["note"].strip()
+        targets[target] = target_summary
+
+    if len(designs) != 1 or len(cohort_sizes) != 1:
+        return _cv_unavailable("Internal cross-validation artifacts do not share one design and cohort.")
+
+    folds, repeats = next(iter(designs))
+    cohort_n = next(iter(cohort_sizes))
+    return {
+        "status": "available",
+        "source": "metrics_json",
+        "evaluation": "internal repeated stratified cross-validation",
+        "design": {
+            "folds": folds,
+            "repeats": repeats,
+            "total_folds": folds * repeats,
+            "label": f"{folds}×{repeats} CV",
+        },
+        "cohort_n": cohort_n,
+        "cohort_note": f"n={cohort_n} source cohort",
+        "interpretation": CV_INTERPRETATION,
+        "summary_only": True,
+        "targets": targets,
+    }
+
+
 def _load_bundle() -> dict[str, Any] | None:
     if not BUNDLE_PATH.exists():
         return None
@@ -375,7 +517,8 @@ def model_info() -> dict[str, Any]:
             "training_rows": meta.get("source_rows"),
             "label_consistency": meta.get("label_consistency"),
             "calibration_status": "uncalibrated_research",
-            "targets": ["cad_present", "lad", "lcx", "rca"],
+            "targets": list(CV_TARGETS),
+            "cv_summary": _load_cv_summary(),
             "future_risk_available": False,
         }
     return {
@@ -384,7 +527,10 @@ def model_info() -> dict[str, Any]:
         "model_version": "0.2.0-demo",
         "feature_count": len(FEATURE_LABELS),
         "calibration_status": "not_calibrated_synthetic",
-        "targets": ["cad_present", "lad", "lcx", "rca"],
+        "targets": list(CV_TARGETS),
+        "cv_summary": _cv_unavailable(
+            "The synthetic demo formula has no trained-model cross-validation summary."
+        ),
         "future_risk_available": False,
     }
 

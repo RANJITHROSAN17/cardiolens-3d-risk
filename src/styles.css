@@ -139,7 +139,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-v
 .vessel-list-heading { margin: 13px 1px 8px; display: flex; align-items: center; justify-content: space-between; color: #526c77; font-size: 9px; font-weight: 700; }
 .vessel-list-heading span:last-child { color: #9aa8ad; font-size: 8px; font-weight: 500; }
 .vessel-card-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-.vessel-card { position: relative; min-width: 0; min-height: 57px; display: grid; grid-template-columns: 8px 1fr auto; align-items: center; column-gap: 7px; padding: 8px 9px 13px; border: 1px solid #e8eef0; border-radius: 9px; background: #fff; color: #2f4956; text-align: left; transition: border .15s, background .15s, box-shadow .15s; }
+.vessel-card { position: relative; min-width: 0; min-height: 68px; display: grid; grid-template-columns: 8px 1fr auto; align-items: center; column-gap: 7px; padding: 8px 9px 13px; border: 1px solid #e8eef0; border-radius: 9px; background: #fff; color: #2f4956; text-align: left; transition: border .15s, background .15s, box-shadow .15s; }
 .vessel-card:hover, .vessel-card.active { border-color: #b8dcd7; background: #f8fcfb; box-shadow: 0 2px 8px rgba(27,118,111,.07); }
 .vessel-dot { width: 7px; height: 7px; display: inline-block; border-radius: 50%; background: #8da0a7; }
 .vessel-dot.lad { background: var(--lad); }
@@ -149,6 +149,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-v
 .vessel-copy strong { font-size: 9px; font-weight: 800; }
 .vessel-copy small { overflow: hidden; color: #91a0a5; font-size: 7px; text-overflow: ellipsis; white-space: nowrap; }
 .vessel-score { color: #274655; font-size: 12px; font-weight: 780; font-variant-numeric: tabular-nums; }
+.vessel-copy .vessel-cv { color: #6f8b91; font-size: 6.8px; font-weight: 650; font-variant-numeric: tabular-nums; white-space: normal; }
 .score-meter { position: absolute; right: 8px; bottom: 5px; left: 8px; height: 3px; overflow: hidden; border-radius: 4px; background: #edf1f2; }
 .score-meter span { height: 100%; display: block; border-radius: inherit; background: linear-gradient(90deg, #2aa99a, #e2b04a 50%, #d84d70); transition: width .35s ease; }
 .anatomy-footnote { display: flex; gap: 7px; align-items: flex-start; margin-top: 10px; color: #88999f; font-size: 8px; line-height: 1.45; }
@@ -197,6 +198,17 @@ button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-v
 .detail-score { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; color: #83949b; font-size: 8px; }
 .detail-score strong { color: #2c4d5a; font-size: 15px; font-weight: 760; }
 .vessel-detail-panel .score-meter { position: relative; inset: auto; height: 5px; }
+.cv-context { margin-top: 11px; padding: 9px; border: 1px solid #e3eeee; border-radius: 9px; background: #f8fbfb; }
+.cv-context.compact { margin-top: 10px; }
+.cv-context-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; color: #6f8991; font-size: 6.8px; letter-spacing: .35px; font-weight: 800; line-height: 1.35; }
+.cv-context-heading span:last-child { color: #8ba0a5; text-align: right; font-weight: 700; }
+.cv-metric-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-top: 8px; }
+.cv-metric { min-width: 0; padding: 6px 5px; border: 1px solid #e7eeee; border-radius: 7px; background: #fff; }
+.cv-metric span { display: block; color: #93a5aa; font-size: 6.3px; letter-spacing: .35px; font-weight: 800; }
+.cv-metric strong { display: block; margin-top: 3px; color: #315363; font-size: 8.3px; line-height: 1.2; font-weight: 760; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cv-metric small { display: block; margin-top: 2px; color: #9aa8ad; font-size: 6.2px; line-height: 1.2; }
+.cv-context-meta { display: flex; flex-wrap: wrap; gap: 3px 7px; margin-top: 7px; color: #82969d; font-size: 6.8px; line-height: 1.35; }
+.cv-context-note { margin: 6px 0 0; color: #7f959c; font-size: 7.3px; line-height: 1.45; }
 .vessel-detail-note { margin: 9px 0 0; color: #8a9aa0; font-size: 8px; line-height: 1.45; }
 .explanation-panel { padding: 14px 15px 12px; }
 .explanation-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }

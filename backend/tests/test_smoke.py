@@ -1,6 +1,10 @@
+import json
+from pathlib import Path
+
 import pandas as pd
 import pytest
 
+import app.main as main
 from app.main import BUNDLE, _bundle_predict, _checked_demo_features, _demo_predict
 from ml.train import find_targets, parse_binary_label, select_features
 
@@ -166,3 +170,93 @@ def test_lvh_model_encoding_and_explanation_are_preserved(lvh, label):
     result = _bundle_predict({**DEMO, "lvh": lvh}, bundle)
     assert result["status"] == "ok"
     assert result["explanation"][0]["value"] == label
+
+
+def _trained_model_info_bundle() -> dict:
+    return {
+        "feature_columns": list(DEMO),
+        "metadata": {
+            "model_id": "z-alizadeh-logistic-baseline",
+            "version": "research-1.1.0",
+            "source_rows": 303,
+            "label_consistency": {"checked": True},
+        },
+    }
+
+
+def test_model_info_exposes_compact_cv_summary_from_metrics_artifact(monkeypatch):
+    root = Path(__file__).resolve().parents[2]
+    artifact = json.loads((root / "backend" / "artifacts" / "metrics.json").read_text(encoding="utf-8"))
+    monkeypatch.setattr(main, "BUNDLE", _trained_model_info_bundle())
+
+    info = main.model_info()
+    summary = info["cv_summary"]
+
+    assert info["training_rows"] == 303
+    assert summary["status"] == "available"
+    assert summary["source"] == "metrics_json"
+    assert summary["design"] == {"folds": 5, "repeats": 5, "total_folds": 25, "label": "5×5 CV"}
+    assert summary["cohort_n"] == 303
+    assert summary["cohort_note"] == "n=303 source cohort"
+    assert summary["summary_only"] is True
+    assert "not a patient-level confidence interval" in summary["interpretation"]
+    assert "fold_metrics" not in json.dumps(info)
+
+    for target, source in artifact.items():
+        exposed = summary["targets"][target]
+        assert exposed["class_counts"] == source["class_counts"]
+        assert exposed["cohort_n"] == source["class_counts"]["positive"] + source["class_counts"]["negative"] == 303
+        assert exposed["threshold"] == source["threshold"]
+        for metric in ("roc_auc", "pr_auc", "brier"):
+            assert exposed[metric] == source["summary"][metric]
+
+
+def test_cv_summary_fails_closed_when_metrics_are_missing_or_malformed(tmp_path, monkeypatch):
+    missing = main._load_cv_summary(tmp_path / "missing-metrics.json")
+    assert missing["status"] == "unavailable"
+    assert missing["targets"] == {}
+
+    malformed_path = tmp_path / "metrics.json"
+    malformed_path.write_text('{"lad": {"summary": {}}}', encoding="utf-8")
+    malformed = main._load_cv_summary(malformed_path)
+    assert malformed["status"] == "unavailable"
+    assert malformed["targets"] == {}
+
+    monkeypatch.setattr(main, "BUNDLE", _trained_model_info_bundle())
+    monkeypatch.setattr(main, "METRICS_PATH", tmp_path / "missing-metrics.json")
+    assert main.model_info()["cv_summary"]["status"] == "unavailable"
+
+
+def test_synthetic_demo_model_info_does_not_claim_trained_cv_metrics(monkeypatch):
+    monkeypatch.setattr(main, "BUNDLE", None)
+
+    info = main.model_info()
+
+    assert info["mode"] == "synthetic_demo"
+    assert info["cv_summary"]["status"] == "unavailable"
+    assert info["cv_summary"]["targets"] == {}
+    assert "synthetic demo" in info["cv_summary"]["reason"]
+
+
+def test_frontend_static_cv_fallback_matches_metrics_artifact():
+    import subprocess
+
+    root = Path(__file__).resolve().parents[2]
+    artifact = json.loads((root / "backend" / "artifacts" / "metrics.json").read_text(encoding="utf-8"))
+    output = subprocess.run(
+        ["node", "--input-type=module", "-e",
+         "import {STATIC_CV_SUMMARY} from './src/model-metrics.js';"
+         "console.log(JSON.stringify(STATIC_CV_SUMMARY));"],
+        cwd=root, check=True, capture_output=True, text=True, timeout=15,
+    )
+    bundled = json.loads(output.stdout)
+
+    assert bundled["cohort_n"] == 303
+    assert bundled["design"] == {"folds": 5, "repeats": 5, "total_folds": 25, "label": "5×5 CV"}
+    assert "fold_metrics" not in json.dumps(bundled)
+    for target, source in artifact.items():
+        exposed = bundled["targets"][target]
+        assert exposed["class_counts"] == source["class_counts"]
+        assert exposed["threshold"] == source["threshold"]
+        for metric in ("roc_auc", "pr_auc", "brier"):
+            assert exposed[metric] == source["summary"][metric]
