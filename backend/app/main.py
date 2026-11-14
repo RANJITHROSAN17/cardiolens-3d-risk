@@ -18,7 +18,8 @@ import joblib
 import numpy as np
 import pandas as pd
 import sklearn
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -195,6 +196,108 @@ def _validate_feature_keys(raw: dict[str, Any], allowed_normalized_keys: set[str
     rejection = _feature_key_rejection(raw, allowed_normalized_keys)
     if rejection is not None:
         raise ValueError(str(rejection["reason"]))
+
+
+_INVALID_INPUT_MESSAGES = {
+    "identifier_fields": "Identifier/PHI fields are not accepted. Do not submit names or identifiers.",
+    "unexpected_fields": "Unexpected input fields are not accepted. Submit only validated synthetic predictor fields.",
+    "forbidden_features": "Outcome/diagnostic fields are not accepted as predictors.",
+    "missing_fields": "Missing required predictor fields. Submit the complete validated synthetic field set.",
+    "invalid_input": "Invalid input. Submit only validated synthetic predictor fields.",
+}
+_FEATURE_FIELDS_BY_NORMALIZED = {_norm_key(field): field for field in FEATURE_FIELDS}
+_SAFE_VALIDATION_LOCATIONS = {"body", "features", "schema_version"}
+_SAFE_VALIDATION_MESSAGES = {
+    "extra_forbidden": "Unexpected fields are not accepted.",
+    "missing": "Field required.",
+}
+
+
+def _invalid_input_response(error_code: str = "invalid_input") -> JSONResponse:
+    """Return a 422 response that never echoes unvalidated keys or values."""
+    code = error_code if error_code in _INVALID_INPUT_MESSAGES else "invalid_input"
+    return JSONResponse(
+        status_code=422,
+        content={
+            "status": "invalid_input",
+            "error_code": code,
+            "message": _INVALID_INPUT_MESSAGES[code],
+        },
+    )
+
+
+def _invalid_input_response_for_error(exc: Exception) -> JSONResponse:
+    message = str(exc)
+    if message.startswith("Identifier/PHI fields"):
+        return _invalid_input_response("identifier_fields")
+    if message.startswith("Unexpected input fields"):
+        return _invalid_input_response("unexpected_fields")
+    if message.startswith("Outcome/diagnostic fields"):
+        return _invalid_input_response("forbidden_features")
+    if message.startswith("Missing demo fields") or "missing fields" in message.lower():
+        return _invalid_input_response("missing_fields")
+    return _invalid_input_response()
+
+
+def _safe_validation_errors(errors: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Strip raw input/context from validation errors before returning them.
+
+    Pydantic's default error objects include an ``input`` entry (and sometimes
+    context) containing the exact unvalidated value. Those values can be
+    accidental identifiers or free text, so only allow-listed field locations,
+    the error type, and a fixed message are retained.
+    """
+    safe_errors: list[dict[str, Any]] = []
+    for error in errors or []:
+        if not isinstance(error, dict):
+            safe_errors.append({
+                "loc": ["body"],
+                "type": "value_error",
+                "message": "Invalid input.",
+            })
+            continue
+
+        safe_loc: list[str | int] = []
+        for part in error.get("loc") or ("body",):
+            if isinstance(part, int) and not isinstance(part, bool):
+                safe_loc.append(part)
+            elif isinstance(part, str) and part in _SAFE_VALIDATION_LOCATIONS:
+                safe_loc.append(part)
+            elif isinstance(part, str) and _norm_key(part) in _FEATURE_FIELDS_BY_NORMALIZED:
+                safe_loc.append(_FEATURE_FIELDS_BY_NORMALIZED[_norm_key(part)])
+            elif isinstance(part, str) and _is_identifier_key(part):
+                safe_loc.append("identifier_field")
+            else:
+                safe_loc.append("redacted_field")
+
+        error_type = str(error.get("type") or "value_error")
+        safe_errors.append({
+            "loc": safe_loc,
+            "type": error_type,
+            "message": _SAFE_VALIDATION_MESSAGES.get(error_type, "Invalid input."),
+        })
+    return safe_errors
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(
+    request: Request, exc: RequestValidationError
+) -> JSONResponse:
+    # Deliberately do not read or log the request body or stringify ``exc``:
+    # both can contain raw, unvalidated free-text values.
+    del request
+    return JSONResponse(
+        status_code=422,
+        content={
+            "status": "invalid_input",
+            "error_code": "request_validation_failed",
+            "message": (
+                "Request validation failed. Submit only validated synthetic "
+                "predictor fields; identifiers and free-text fields are not accepted."
+            ),
+            "errors": _safe_validation_errors(exc.errors()),
+        },
+    )
 
 
 def _sigmoid(value: float) -> float:
@@ -851,10 +954,12 @@ def predict(request: PredictionRequest) -> JSONResponse:
     try:
         if BUNDLE:
             result = _bundle_predict(request.features, BUNDLE)
+            if result.get("status") == "not_estimable" and result.get("rejection_type"):
+                return _invalid_input_response(str(result["rejection_type"]))
         else:
             result = _demo_predict(_checked_demo_features(request.features))
     except (ValueError, TypeError) as exc:
-        return JSONResponse(status_code=422, content={"status": "invalid_input", "message": str(exc)})
+        return _invalid_input_response_for_error(exc)
     return JSONResponse(content=result)
 
 
@@ -864,7 +969,7 @@ def report(request: PredictionRequest) -> JSONResponse:
     try:
         report_payload = _report_for_features(request.features)
     except (ValueError, TypeError) as exc:
-        return JSONResponse(status_code=422, content={"status": "invalid_input", "message": str(exc)})
+        return _invalid_input_response_for_error(exc)
     return JSONResponse(
         content=report_payload,
         headers={

@@ -54,3 +54,39 @@ test('validation schema exports the canonical and identifier field lists', () =>
   assert.deepEqual(VALIDATION_SCHEMA.identifier_fields, IDENTIFIER_FIELDS);
   assert.equal(new Set(VALIDATION_SCHEMA.feature_fields).size, 22);
 });
+test('client allowlist is closed to exactly the 22 canonical predictor keys', () => {
+  assert.deepEqual(VALIDATION_SCHEMA.feature_fields, [
+    'age', 'sex', 'bmi', 'diabetes', 'hypertension', 'smoking', 'ex_smoker',
+    'family_history', 'systolic_bp', 'pulse_rate', 'typical_chest_pain',
+    'st_elevation', 'st_depression', 't_inversion', 'lvh', 'fbs', 'tg',
+    'ldl', 'hdl', 'ef_tte', 'region_rwma', 'vhd',
+  ]);
+  assert.deepEqual(Object.keys(valid).sort(), [...VALIDATION_SCHEMA.feature_fields].sort());
+});
+test('backend-only aliases are not accepted by the client allowlist', () => {
+  for (const alias of ['gender', 'sbp', 'bp', 'pr', 'heart_rate', 'current_smoker', 'former smoker', 'dm', 'htn', 'fh', 'blood pressure', 'fasting blood sugar', 'ef-tte']) {
+    assert.ok(
+      validateCase({...valid, [alias]:'synthetic-value'}).some(error => error.includes('not a supported input field')),
+      `${alias} should be rejected by the client`,
+    );
+  }
+});
+test('validation errors never echo raw free-text keys or values', () => {
+  const marker = 'SYNTHETIC_FREE_TEXT_MARKER';
+  for (const unsafe of [
+    {...valid, sex: marker},
+    {...valid, vhd: marker},
+    {...valid, patient_id: marker},
+    {...valid, notes: marker},
+    {...valid, [marker]: 'synthetic-value'},
+  ]) {
+    const errors = validateCase(unsafe);
+    assert.ok(errors.length);
+    assert.equal(errors.join(' ').includes(marker), false);
+  }
+});
+test('non-object case payloads fail closed', () => {
+  for (const unsafe of [null, undefined, [], 'synthetic-free-text', 42]) {
+    assert.ok(validateCase(unsafe).length);
+  }
+});

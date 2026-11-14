@@ -307,6 +307,111 @@ def test_prediction_request_rejects_unexpected_top_level_keys():
         )
 
 
+def test_documented_demo_aliases_map_only_to_the_22_canonical_fields():
+    assert set(main.DEMO_FEATURE_ALIASES) == set(main.FEATURE_FIELDS)
+    assert set(main.DEMO_FEATURE_ALIASES) == set(DEMO) and len(DEMO) == 22
+
+    alias_payload = {
+        "age": DEMO["age"], "gender": DEMO["sex"], "bmi": DEMO["bmi"],
+        "sbp": DEMO["systolic_bp"], "pr": DEMO["pulse_rate"],
+        "current smoker": DEMO["smoking"], "ex-smoker": DEMO["ex_smoker"],
+        "dm": DEMO["diabetes"], "htn": DEMO["hypertension"], "fh": DEMO["family_history"],
+        "typical chest pain": DEMO["typical_chest_pain"],
+        "st elevation": DEMO["st_elevation"], "st depression": DEMO["st_depression"],
+        "t inversion": DEMO["t_inversion"], "lvh": DEMO["lvh"],
+        "fasting blood sugar": DEMO["fbs"], "triglycerides": DEMO["tg"],
+        "ldl": DEMO["ldl"], "hdl": DEMO["hdl"], "ef-tte": DEMO["ef_tte"],
+        "region rwma": DEMO["region_rwma"], "vhd": DEMO["vhd"],
+    }
+
+    assert _checked_demo_features(alias_payload) == _checked_demo_features(DEMO)
+
+
+def test_fastapi_validation_error_response_strips_raw_input_and_context():
+    import asyncio
+    from fastapi.exceptions import RequestValidationError
+
+    marker = "SYNTHETIC_FREE_TEXT_MARKER"
+    errors = [{
+        "loc": ("body", "patient_id"),
+        "msg": marker,
+        "type": "extra_forbidden",
+        "input": marker,
+        "ctx": {"value": marker},
+    }]
+
+    safe = main._safe_validation_errors(errors)
+    assert marker not in json.dumps(safe)
+    assert safe == [{
+        "loc": ["body", "identifier_field"],
+        "type": "extra_forbidden",
+        "message": "Unexpected fields are not accepted.",
+    }]
+    assert main._safe_validation_errors([
+        {"loc": ("body", marker), "msg": marker, "type": "extra_forbidden", "input": marker}
+    ])[0]["loc"] == ["body", "redacted_field"]
+
+    response = asyncio.run(
+        main.validation_exception_handler(None, RequestValidationError(errors))
+    )
+    body = response.body.decode()
+    assert response.status_code == 422
+    assert marker not in body
+    assert json.loads(body)["error_code"] == "request_validation_failed"
+
+
+@pytest.mark.parametrize("bundle", [None, {"feature_columns": list(DEMO)}])
+def test_predict_endpoint_returns_sanitized_422_for_key_rejections(bundle, monkeypatch, caplog):
+    marker = "SYNTHETIC_FREE_TEXT_MARKER"
+    monkeypatch.setattr(main, "BUNDLE", bundle)
+
+    for features in [
+        {**DEMO, "patient_id": marker},
+        {**DEMO, marker: "synthetic-value"},
+        {**DEMO, "unexpected_note": marker},
+    ]:
+        with caplog.at_level("WARNING"):
+            response = main.predict(
+                main.PredictionRequest(schema_version="0.2", features=features)
+            )
+        body = response.body.decode()
+        assert response.status_code == 422
+        assert json.loads(body)["status"] == "invalid_input"
+        assert marker not in body
+        assert "unexpected_note" not in body
+        assert marker not in caplog.text
+
+
+def test_predict_endpoint_sanitizes_free_text_field_values(monkeypatch, caplog):
+    marker = "SYNTHETIC_FREE_TEXT_MARKER"
+    monkeypatch.setattr(main, "BUNDLE", None)
+
+    with caplog.at_level("WARNING"):
+        response = main.predict(
+            main.PredictionRequest(schema_version="0.2", features={**DEMO, "sex": marker})
+        )
+
+    assert response.status_code == 422
+    assert marker not in response.body.decode()
+    assert marker not in caplog.text
+
+
+def test_report_endpoint_returns_sanitized_422_for_unknown_keys(monkeypatch):
+    marker = "SYNTHETIC_FREE_TEXT_MARKER"
+    monkeypatch.setattr(main, "BUNDLE", None)
+
+    response = main.report(
+        main.PredictionRequest(
+            schema_version="0.2", features={**DEMO, "unexpected_note": marker}
+        )
+    )
+
+    assert response.status_code == 422
+    assert json.loads(response.body)["error_code"] == "unexpected_fields"
+    assert marker not in response.body.decode()
+    assert "unexpected_note" not in response.body.decode()
+
+
 def test_bundle_prediction_returns_human_readable_validated_inputs():
     from types import SimpleNamespace
     import numpy as np
